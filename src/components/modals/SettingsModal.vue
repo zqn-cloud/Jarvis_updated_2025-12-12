@@ -2,213 +2,155 @@
   <div class="modal-overlay" @click.self="$emit('close')">
     <div class="modal-container">
       <div class="modal-header">
-        <h2>Settings</h2>
+        <h2>Account</h2>
         <button class="close-btn" @click="$emit('close')">
           <X :size="20" />
         </button>
       </div>
 
       <div class="settings-content">
-        <!-- Profile Section -->
+        <!-- Account Info -->
         <section class="settings-section">
-          <h3 class="section-title">Profile</h3>
-          <div class="profile-card">
-            <div class="avatar-wrapper">
-              <img :src="settings.avatar" alt="User Avatar" class="avatar" />
-              <button class="change-avatar">
-                <Camera :size="14" />
-              </button>
+          <h3 class="section-title">ACCOUNT</h3>
+          <div class="account-card">
+            <div class="account-icon">
+              <User :size="24" />
             </div>
-            <div class="profile-info">
-              <input 
-                type="text" 
-                v-model="settings.name" 
-                class="name-input"
-                placeholder="Your Name"
-              />
-              <input 
-                type="email" 
-                v-model="settings.email" 
-                class="email-input"
-                placeholder="your@email.com"
-              />
+            <div class="account-info">
+              <span class="account-label">Logged in as</span>
+              <span class="account-id">{{ accountId }}</span>
             </div>
           </div>
         </section>
 
-        <!-- Preferences Section -->
+        <!-- Addresses -->
         <section class="settings-section">
-          <h3 class="section-title">Preferences</h3>
+          <h3 class="section-title">ADDRESSES</h3>
           
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Language</span>
-              <span class="setting-desc">Choose your preferred language</span>
-            </div>
-            <select v-model="settings.language" class="setting-select">
-              <option value="en">English</option>
-              <option value="zh">中文</option>
-              <option value="ja">日本語</option>
-            </select>
+          <div class="form-group">
+            <label>
+              <Home :size="16" />
+              Home Address
+            </label>
+            <input 
+              type="text" 
+              v-model="localHomeAddress" 
+              class="form-input"
+              placeholder="Enter your home address"
+            />
           </div>
 
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Time Format</span>
-              <span class="setting-desc">12-hour or 24-hour format</span>
-            </div>
-            <select v-model="settings.timeFormat" class="setting-select">
-              <option value="12h">12-hour</option>
-              <option value="24h">24-hour</option>
-            </select>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Week Starts On</span>
-              <span class="setting-desc">First day of the week</span>
-            </div>
-            <select v-model="settings.weekStart" class="setting-select">
-              <option value="sunday">Sunday</option>
-              <option value="monday">Monday</option>
-            </select>
+          <div class="form-group">
+            <label>
+              <GraduationCap :size="16" />
+              School/Work Address
+            </label>
+            <input 
+              type="text" 
+              v-model="localSchoolAddress" 
+              class="form-input"
+              placeholder="Enter your school or work address"
+            />
           </div>
         </section>
 
-        <!-- Notifications Section -->
+        <!-- Current Location -->
         <section class="settings-section">
-          <h3 class="section-title">Notifications</h3>
-          
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Push Notifications</span>
-              <span class="setting-desc">Receive reminders for events</span>
+          <h3 class="section-title">CURRENT LOCATION</h3>
+          <div class="location-card">
+            <div class="location-info">
+              <MapPin :size="20" class="location-icon" />
+              <div class="location-text">
+                <span v-if="locationLoading">Getting location...</span>
+                <span v-else-if="currentLocation">
+                  {{ currentLocation.latitude.toFixed(6) }}, {{ currentLocation.longitude.toFixed(6) }}
+                </span>
+                <span v-else class="location-placeholder">Location not available</span>
+              </div>
             </div>
-            <button 
-              class="toggle-switch" 
-              :class="{ active: settings.pushNotifications }"
-              @click="settings.pushNotifications = !settings.pushNotifications"
-            >
-              <span class="toggle-knob"></span>
-            </button>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Email Notifications</span>
-              <span class="setting-desc">Daily summary of your schedule</span>
-            </div>
-            <button 
-              class="toggle-switch" 
-              :class="{ active: settings.emailNotifications }"
-              @click="settings.emailNotifications = !settings.emailNotifications"
-            >
-              <span class="toggle-knob"></span>
-            </button>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Reminder Time</span>
-              <span class="setting-desc">Default time before events</span>
-            </div>
-            <select v-model="settings.reminderTime" class="setting-select">
-              <option value="5">5 minutes</option>
-              <option value="10">10 minutes</option>
-              <option value="15">15 minutes</option>
-              <option value="30">30 minutes</option>
-              <option value="60">1 hour</option>
-            </select>
-          </div>
-        </section>
-
-        <!-- AI Settings Section -->
-        <section class="settings-section">
-          <h3 class="section-title">AI Assistant</h3>
-          
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">AI Suggestions</span>
-              <span class="setting-desc">Get smart scheduling suggestions</span>
-            </div>
-            <button 
-              class="toggle-switch" 
-              :class="{ active: settings.aiSuggestions }"
-              @click="settings.aiSuggestions = !settings.aiSuggestions"
-            >
-              <span class="toggle-knob"></span>
-            </button>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Voice Input</span>
-              <span class="setting-desc">Enable voice commands</span>
-            </div>
-            <button 
-              class="toggle-switch" 
-              :class="{ active: settings.voiceInput }"
-              @click="settings.voiceInput = !settings.voiceInput"
-            >
-              <span class="toggle-knob"></span>
+            <button class="refresh-btn" @click="refreshLocation" :disabled="locationLoading">
+              <RefreshCw :size="16" :class="{ spinning: locationLoading }" />
             </button>
           </div>
         </section>
 
-        <!-- Danger Zone -->
-        <section class="settings-section danger-zone">
-          <h3 class="section-title">Danger Zone</h3>
-          
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Clear All Data</span>
-              <span class="setting-desc">Delete all events and settings</span>
-            </div>
-            <button class="danger-btn">Clear</button>
-          </div>
-
-          <div class="setting-item">
-            <div class="setting-info">
-              <span class="setting-label">Delete Account</span>
-              <span class="setting-desc">Permanently delete your account</span>
-            </div>
-            <button class="danger-btn">Delete</button>
-          </div>
+        <!-- Logout -->
+        <section class="settings-section">
+          <button class="logout-btn" @click="handleLogout">
+            <LogOut :size="18" />
+            <span>Logout</span>
+          </button>
         </section>
       </div>
 
       <div class="modal-footer">
         <button class="cancel-btn" @click="$emit('close')">Cancel</button>
-        <button class="save-btn" @click="handleSave">Save Changes</button>
+        <button class="save-btn" @click="handleSave">Save</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive } from 'vue';
-import { X, Camera } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
+import { X, User, Home, GraduationCap, MapPin, RefreshCw, LogOut } from 'lucide-vue-next';
 
-const emit = defineEmits(['close', 'save']);
-
-const settings = reactive({
-  name: 'User Name',
-  email: 'user@example.com',
-  avatar: 'https://i.pravatar.cc/150?img=32',
-  language: 'en',
-  timeFormat: '12h',
-  weekStart: 'sunday',
-  pushNotifications: true,
-  emailNotifications: false,
-  reminderTime: '15',
-  aiSuggestions: true,
-  voiceInput: true
+const props = defineProps({
+  accountId: { type: String, required: true },
+  homeAddress: { type: String, default: '' },
+  schoolAddress: { type: String, default: '' }
 });
 
+const emit = defineEmits(['close', 'save', 'logout']);
+
+const localHomeAddress = ref(props.homeAddress);
+const localSchoolAddress = ref(props.schoolAddress);
+const currentLocation = ref(null);
+const locationLoading = ref(false);
+
+const refreshLocation = () => {
+  if (!navigator.geolocation) {
+    alert('Geolocation is not supported by your browser');
+    return;
+  }
+
+  locationLoading.value = true;
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      currentLocation.value = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: new Date().toISOString()
+      };
+      locationLoading.value = false;
+    },
+    (error) => {
+      console.error('Error getting location:', error);
+      locationLoading.value = false;
+      alert('Unable to get location. Please check permissions.');
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+};
+
 const handleSave = () => {
-  emit('save', { ...settings });
+  emit('save', {
+    homeAddress: localHomeAddress.value,
+    schoolAddress: localSchoolAddress.value,
+    currentLocation: currentLocation.value
+  });
   emit('close');
 };
+
+const handleLogout = () => {
+  emit('logout');
+};
+
+onMounted(() => {
+  refreshLocation();
+});
 </script>
 
 <style scoped>
@@ -224,8 +166,7 @@ const handleSave = () => {
 
 .modal-container {
   background: white;
-  width: 500px;
-  max-height: 85vh;
+  width: 420px;
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -249,6 +190,9 @@ const handleSave = () => {
 .close-btn {
   color: var(--text-secondary);
   padding: 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
 }
 
 .close-btn:hover {
@@ -256,13 +200,13 @@ const handleSave = () => {
 }
 
 .settings-content {
-  flex: 1;
-  overflow-y: auto;
   padding: 20px 24px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .settings-section {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .settings-section:last-child {
@@ -270,170 +214,161 @@ const handleSave = () => {
 }
 
 .section-title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
-/* Profile Card */
-.profile-card {
+/* Account Card */
+.account-card {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 16px;
-  background: #F9FAFB;
+  background: #F3F4F6;
   border-radius: 12px;
 }
 
-.avatar-wrapper {
-  position: relative;
-}
-
-.avatar {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.change-avatar {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 24px;
-  height: 24px;
-  background: #6366F1;
-  color: white;
+.account-icon {
+  width: 48px;
+  height: 48px;
+  background: #E5E7EB;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.profile-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.name-input, .email-input {
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  padding: 8px 12px;
-  font-size: 14px;
-  outline: none;
-}
-
-.name-input {
-  font-weight: 500;
-}
-
-.email-input {
   color: var(--text-secondary);
 }
 
-.name-input:focus, .email-input:focus {
-  border-color: #6366F1;
-}
-
-/* Setting Item */
-.setting-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 0;
-  border-bottom: 1px solid #F3F4F6;
-}
-
-.setting-item:last-child {
-  border-bottom: none;
-}
-
-.setting-info {
+.account-info {
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
-.setting-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.setting-desc {
+.account-label {
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.setting-select {
-  padding: 8px 12px;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  font-size: 14px;
-  outline: none;
-  cursor: pointer;
-  background: white;
+.account-id {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
-.setting-select:focus {
+/* Form Group */
+.form-group {
+  margin-bottom: 14px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
   border-color: #6366F1;
 }
 
-/* Toggle Switch */
-.toggle-switch {
-  width: 44px;
-  height: 24px;
-  background-color: #E5E7EB;
+/* Location Card */
+.location-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: #F0FDF4;
   border-radius: 12px;
-  position: relative;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  border: none;
-  padding: 2px;
 }
 
-.toggle-switch.active {
-  background-color: #6366F1;
+.location-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.toggle-knob {
-  width: 20px;
-  height: 20px;
+.location-icon {
+  color: #22C55E;
+}
+
+.location-text {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.location-placeholder {
+  color: var(--text-secondary);
+}
+
+.refresh-btn {
+  padding: 8px;
   background: white;
-  border-radius: 50%;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  transition: transform 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: none;
+  border-radius: 8px;
+  color: #22C55E;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.toggle-switch.active .toggle-knob {
-  transform: translateX(20px);
+.refresh-btn:hover:not(:disabled) {
+  background: #DCFCE7;
 }
 
-/* Danger Zone */
-.danger-zone .section-title {
-  color: #EF4444;
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.danger-btn {
-  padding: 8px 16px;
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Logout Button */
+.logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
   background: #FEE2E2;
   color: #EF4444;
   border: none;
-  border-radius: 8px;
-  font-size: 13px;
+  border-radius: 10px;
+  font-size: 14px;
   font-weight: 500;
   cursor: pointer;
 }
 
-.danger-btn:hover {
+.logout-btn:hover {
   background: #FECACA;
 }
 

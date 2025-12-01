@@ -4,7 +4,13 @@ import vue from '@vitejs/plugin-vue'
 export default defineConfig({
   plugins: [vue()],
   server: {
-    host: true, // 允许外部访问
-    allowedHosts: ['.trycloudflare.com'] // 允许 cloudflare tunnel 域名
-  }
+    host: true,
+    allowedHosts: ['.trycloudflare.com'],
+    proxy: {
+      '/api/v1': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })

@@ -38,6 +38,11 @@
           <div class="detail-info">
             <span class="detail-time">{{ task.isAllDay ? 'All day' : timeRange }}, {{ formattedDate }}</span>
             <h3 class="detail-title">{{ task.title }}</h3>
+            <!-- Location -->
+            <div v-if="task.location" class="location-row">
+              <MapPin :size="14" />
+              <span>{{ task.location }}</span>
+            </div>
             <span v-if="task.attachment" class="attachment-chip large">
               <FileText :size="14" />
               {{ task.attachment.name }}
@@ -91,7 +96,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { format } from 'date-fns';
-import { Check, ChevronDown, ChevronUp, FileText, Link, Edit, Share2, Trash2, MoreVertical } from 'lucide-vue-next';
+import { Check, ChevronDown, ChevronUp, FileText, Link, Edit, Share2, Trash2, MoreVertical, MapPin } from 'lucide-vue-next';
 import html2canvas from 'html2canvas';
 
 const props = defineProps({
@@ -320,6 +325,15 @@ const shareTask = async () => {
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin-top: 4px;
 }
 
 .links-section {

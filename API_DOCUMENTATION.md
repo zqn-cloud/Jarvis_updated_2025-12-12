@@ -1,27 +1,39 @@
-# Jarvis Calendar - Backend API Documentation
+# Jarvis Calendar - Complete Backend API Documentation
 
 ## Overview
 
-This document provides comprehensive API specifications for the Jarvis Calendar application backend. The API follows RESTful conventions and uses JSON for request/response bodies.
+This document provides comprehensive API specifications for the Jarvis Calendar backend, covering all frontend functionality requirements.
 
-## Base Configuration
-
+### Base Configuration
 ```
 Base URL: https://api.jarvis-calendar.com/v1
 Content-Type: application/json
-Authorization: Bearer <token>
+Authorization: Bearer <access_token>
 ```
 
-## Authentication
+### Standard Response Format
+```json
+{
+  "success": true,
+  "data": { ... },
+  "message": "Operation successful",
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+> **Important**: All responses include `server_time` which is the current server timestamp. Frontend should use this for "today" calculations to ensure consistency.
+
+---
+
+## 1. Authentication Module
 
 ### POST /auth/login
-Login with credentials.
+Login with account ID. Creates new account if not exists.
 
 **Request:**
 ```json
 {
-  "email": "user@example.com",
-  "password": "password123"
+  "account_id": "jarvis@cuhk.com"
 }
 ```
 
@@ -30,61 +42,174 @@ Login with credentials.
 {
   "success": true,
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "refresh_token": "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4...",
-    "expires_in": 3600,
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expires_in": 86400,
+    "is_new_user": false,
     "user": {
-      "id": "user_123",
-      "name": "John Doe",
-      "email": "user@example.com",
-      "avatar": "https://example.com/avatar.jpg"
+      "account_id": "jarvis@cuhk.com",
+      "home_address": "123 Main Street, Sha Tin",
+      "school_address": "CUHK, Sha Tin, Hong Kong",
+      "created_at": "2025-11-01T00:00:00Z"
     }
-  }
-}
-```
-
-### POST /auth/register
-Register a new user.
-
-**Request:**
-```json
-{
-  "name": "John Doe",
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-### POST /auth/refresh
-Refresh access token.
-
-**Request:**
-```json
-{
-  "refresh_token": "dGhpcyBpcyBhIHJlZnJlc2ggdG9rZW4..."
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### POST /auth/logout
 Logout and invalidate token.
 
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "message": "Logged out successfully",
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
 ---
 
-## Events (Tasks/Events)
+## 2. User Module
+
+### GET /user
+Get current user information.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "account_id": "jarvis@cuhk.com",
+    "home_address": "123 Main Street, Sha Tin",
+    "school_address": "CUHK, Sha Tin, Hong Kong",
+    "current_location": {
+      "latitude": 22.4196,
+      "longitude": 114.2068,
+      "accuracy": 10,
+      "timestamp": "2025-12-01T10:25:00Z"
+    },
+    "created_at": "2025-11-01T00:00:00Z",
+    "updated_at": "2025-12-01T10:00:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+### PUT /user
+Update user information (addresses).
+
+**Request:**
+```json
+{
+  "home_address": "456 New Street, Sha Tin",
+  "school_address": "CUHK, Sha Tin, Hong Kong"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "account_id": "jarvis@cuhk.com",
+    "home_address": "456 New Street, Sha Tin",
+    "school_address": "CUHK, Sha Tin, Hong Kong",
+    "updated_at": "2025-12-01T10:30:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+### POST /user/location
+Update user's current location.
+
+**Request:**
+```json
+{
+  "latitude": 22.4196,
+  "longitude": 114.2068,
+  "accuracy": 10
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "location_id": "loc_001",
+    "latitude": 22.4196,
+    "longitude": 114.2068,
+    "accuracy": 10,
+    "timestamp": "2025-12-01T10:30:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+### GET /user/location
+Get user's last known location.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "latitude": 22.4196,
+    "longitude": 114.2068,
+    "accuracy": 10,
+    "address": "Near CUHK MTR Station",
+    "timestamp": "2025-12-01T10:25:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+---
+
+## 3. Server Time Module
+
+### GET /time
+Get current server time. **Critical for "Today" button functionality.**
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "server_time": "2025-12-01T10:30:00Z",
+    "timezone": "UTC",
+    "date": "2025-12-01",
+    "timestamp": 1733051400000
+  }
+}
+```
+
+> **Frontend Usage**: When user clicks "Today" button, frontend should either:
+> 1. Use `new Date()` for client time, OR
+> 2. Call `GET /time` for server time to ensure sync across devices
+
+---
+
+## 4. Events Module
 
 ### GET /events
-Get all events with optional filters.
+Get events with filters.
 
 **Query Parameters:**
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| date | string | Filter by specific date (YYYY-MM-DD) |
-| start_date | string | Range start date (YYYY-MM-DD) |
-| end_date | string | Range end date (YYYY-MM-DD) |
-| type_id | string | Filter by calendar type ID |
-| completed | boolean | Filter by completion status |
-| page | integer | Page number (default: 1) |
-| limit | integer | Items per page (default: 50) |
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| date | string | No | Specific date (YYYY-MM-DD) |
+| start_date | string | No | Range start (YYYY-MM-DD) |
+| end_date | string | No | Range end (YYYY-MM-DD) |
+| type_id | string | No | Filter by calendar type |
+| completed | boolean | No | Filter by completion status |
 
 **Response (200):**
 ```json
@@ -94,34 +219,68 @@ Get all events with optional filters.
     "events": [
       {
         "id": "evt_001",
-        "title": "Team Meeting",
-        "date": "2025-11-30",
-        "is_all_day": false,
-        "start_time": "10:00",
-        "end_time": "11:00",
-        "location": "Conference Room A",
-        "description": "Weekly sync meeting",
-        "type_id": "type_events",
+        "title": "KAI BIRTHDAY TOMORROW",
+        "date": "2025-12-01",
+        "is_all_day": true,
+        "start_time": null,
+        "end_time": null,
+        "location": null,
+        "description": null,
+        "type_id": "events",
         "color": "#F59E0B",
         "completed": false,
-        "links": ["https://meet.google.com/abc-defg-hij"],
+        "expanded": false,
+        "links": [],
+        "attachment": null,
+        "created_at": "2025-11-25T08:00:00Z",
+        "updated_at": "2025-11-25T08:00:00Z"
+      },
+      {
+        "id": "evt_002",
+        "title": "SIGN UP TO UNI",
+        "date": "2025-12-01",
+        "is_all_day": true,
+        "start_time": null,
+        "end_time": null,
+        "location": null,
+        "description": null,
+        "type_id": "events",
+        "color": "#F59E0B",
+        "completed": true,
+        "expanded": false,
+        "links": ["https://university.edu/apply"],
         "attachment": {
-          "name": "agenda.pdf",
-          "url": "https://storage.example.com/files/agenda.pdf",
+          "id": "file_001",
+          "name": "DOcs.pdf",
+          "url": "https://storage.example.com/files/DOcs.pdf",
           "size": 102400,
           "mime_type": "application/pdf"
         },
-        "created_at": "2025-11-25T08:00:00Z",
-        "updated_at": "2025-11-25T08:00:00Z"
+        "created_at": "2025-11-25T09:00:00Z",
+        "updated_at": "2025-12-01T08:00:00Z"
+      },
+      {
+        "id": "evt_003",
+        "title": "Therapy",
+        "date": "2025-12-01",
+        "is_all_day": false,
+        "start_time": "15:00",
+        "end_time": "17:00",
+        "location": "Clinic",
+        "description": null,
+        "type_id": "routine",
+        "color": "#EC4899",
+        "completed": false,
+        "expanded": false,
+        "links": [],
+        "attachment": null,
+        "created_at": "2025-11-20T10:00:00Z",
+        "updated_at": "2025-11-20T10:00:00Z"
       }
     ],
-    "pagination": {
-      "page": 1,
-      "limit": 50,
-      "total": 120,
-      "total_pages": 3
-    }
-  }
+    "total": 3
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
@@ -134,42 +293,39 @@ Get single event by ID.
   "success": true,
   "data": {
     "id": "evt_001",
-    "title": "Team Meeting",
-    "date": "2025-11-30",
-    "is_all_day": false,
-    "start_time": "10:00",
-    "end_time": "11:00",
-    "location": "Conference Room A",
-    "description": "Weekly sync meeting",
-    "type_id": "type_events",
+    "title": "KAI BIRTHDAY TOMORROW",
+    "date": "2025-12-01",
+    "is_all_day": true,
+    "start_time": null,
+    "end_time": null,
+    "location": null,
+    "description": "Don't forget the gift!",
+    "type_id": "events",
     "color": "#F59E0B",
     "completed": false,
-    "links": ["https://meet.google.com/abc-defg-hij"],
+    "links": [],
     "attachment": null,
-    "reminders": [
-      { "type": "notification", "minutes_before": 15 },
-      { "type": "email", "minutes_before": 60 }
-    ],
     "created_at": "2025-11-25T08:00:00Z",
     "updated_at": "2025-11-25T08:00:00Z"
-  }
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### POST /events
-Create a new event.
+Create new event.
 
 **Request:**
 ```json
 {
   "title": "Doctor Appointment",
-  "date": "2025-12-01",
+  "date": "2025-12-02",
   "is_all_day": false,
   "start_time": "14:00",
   "end_time": "15:00",
   "location": "City Hospital",
   "description": "Annual checkup",
-  "type_id": "type_routine",
+  "type_id": "routine",
   "links": [],
   "attachment_id": null
 }
@@ -180,23 +336,26 @@ Create a new event.
 {
   "success": true,
   "data": {
-    "id": "evt_002",
+    "id": "evt_new_001",
     "title": "Doctor Appointment",
-    "date": "2025-12-01",
+    "date": "2025-12-02",
     "is_all_day": false,
     "start_time": "14:00",
     "end_time": "15:00",
     "location": "City Hospital",
-    "type_id": "type_routine",
+    "description": "Annual checkup",
+    "type_id": "routine",
     "color": "#EC4899",
     "completed": false,
-    "created_at": "2025-11-30T10:00:00Z"
-  }
+    "created_at": "2025-12-01T10:30:00Z"
+  },
+  "message": "Event created successfully",
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### PUT /events/:id
-Update an existing event.
+Update event.
 
 **Request:**
 ```json
@@ -204,8 +363,7 @@ Update an existing event.
   "title": "Doctor Appointment - Updated",
   "start_time": "15:00",
   "end_time": "16:00",
-  "completed": false,
-  "links": ["https://hospital.com/appointment/123"]
+  "location": "New Hospital Location"
 }
 ```
 
@@ -214,13 +372,15 @@ Update an existing event.
 {
   "success": true,
   "data": {
-    "id": "evt_002",
+    "id": "evt_new_001",
     "title": "Doctor Appointment - Updated",
-    "date": "2025-12-01",
     "start_time": "15:00",
     "end_time": "16:00",
-    "updated_at": "2025-11-30T12:00:00Z"
-  }
+    "location": "New Hospital Location",
+    "updated_at": "2025-12-01T11:00:00Z"
+  },
+  "message": "Event updated successfully",
+  "server_time": "2025-12-01T11:00:00Z"
 }
 ```
 
@@ -239,26 +399,28 @@ Toggle event completion status.
 {
   "success": true,
   "data": {
-    "id": "evt_002",
+    "id": "evt_001",
     "completed": true,
-    "completed_at": "2025-11-30T14:00:00Z"
-  }
+    "completed_at": "2025-12-01T10:30:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### DELETE /events/:id
-Delete an event.
+Delete event.
 
 **Response (200):**
 ```json
 {
   "success": true,
-  "message": "Event deleted successfully"
+  "message": "Event deleted successfully",
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### POST /events/:id/links
-Add a link to an event.
+Add link to event.
 
 **Request:**
 ```json
@@ -273,15 +435,16 @@ Add a link to an event.
   "success": true,
   "data": {
     "links": [
-      "https://meet.google.com/abc",
+      "https://university.edu/apply",
       "https://docs.google.com/document/d/123"
     ]
-  }
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### DELETE /events/:id/links
-Remove a link from an event.
+Remove link from event.
 
 **Request:**
 ```json
@@ -290,9 +453,24 @@ Remove a link from an event.
 }
 ```
 
+### POST /events/:id/share
+Generate shareable screenshot of event.
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "screenshot_url": "https://storage.example.com/screenshots/evt_001.png",
+    "expires_at": "2025-12-02T10:30:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
 ---
 
-## Calendar Types (Categories)
+## 5. Calendar Types Module
 
 ### GET /calendar-types
 Get all calendar types.
@@ -303,61 +481,52 @@ Get all calendar types.
   "success": true,
   "data": [
     {
-      "id": "type_general",
+      "id": "general",
       "name": "General",
       "color": "#6B7280",
       "is_visible": true,
-      "is_default": true,
       "is_deletable": false,
-      "event_count": 15,
-      "created_at": "2025-01-01T00:00:00Z"
+      "event_count": 15
     },
     {
-      "id": "type_routine",
+      "id": "routine",
       "name": "Routine",
       "color": "#EC4899",
       "is_visible": true,
-      "is_default": false,
       "is_deletable": true,
-      "event_count": 8,
-      "created_at": "2025-01-01T00:00:00Z"
+      "event_count": 8
     },
     {
-      "id": "type_events",
+      "id": "events",
       "name": "Events",
       "color": "#F59E0B",
       "is_visible": true,
-      "is_default": false,
       "is_deletable": true,
-      "event_count": 12,
-      "created_at": "2025-01-01T00:00:00Z"
+      "event_count": 12
     },
     {
-      "id": "type_holidays",
+      "id": "holidays",
       "name": "Holidays",
       "color": "#3B82F6",
       "is_visible": true,
-      "is_default": false,
       "is_deletable": true,
-      "event_count": 5,
-      "created_at": "2025-01-01T00:00:00Z"
+      "event_count": 5
     },
     {
-      "id": "type_school",
+      "id": "school",
       "name": "School",
       "color": "#22C55E",
       "is_visible": true,
-      "is_default": false,
       "is_deletable": true,
-      "event_count": 20,
-      "created_at": "2025-01-01T00:00:00Z"
+      "event_count": 20
     }
-  ]
+  ],
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### POST /calendar-types
-Create a new calendar type.
+Create new calendar type.
 
 **Request:**
 ```json
@@ -372,20 +541,19 @@ Create a new calendar type.
 {
   "success": true,
   "data": {
-    "id": "type_fitness",
+    "id": "fitness_001",
     "name": "Fitness",
     "color": "#10B981",
     "is_visible": true,
-    "is_default": false,
     "is_deletable": true,
-    "event_count": 0,
-    "created_at": "2025-11-30T10:00:00Z"
-  }
+    "event_count": 0
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### PUT /calendar-types/:id
-Update a calendar type.
+Update calendar type.
 
 **Request:**
 ```json
@@ -396,7 +564,7 @@ Update a calendar type.
 ```
 
 ### PATCH /calendar-types/:id/visibility
-Toggle visibility.
+Toggle type visibility.
 
 **Request:**
 ```json
@@ -406,31 +574,31 @@ Toggle visibility.
 ```
 
 ### DELETE /calendar-types/:id
-Delete a calendar type. All events of this type will be moved to "General".
+Delete calendar type. All events of this type will be moved to "General".
 
 **Response (200):**
 ```json
 {
   "success": true,
-  "message": "Calendar type deleted. 5 events moved to General.",
   "data": {
     "events_moved": 5
-  }
+  },
+  "message": "Calendar type deleted. 5 events moved to General.",
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ---
 
-## Reminders (Smart Suggestions)
+## 6. Smart Reminders Module
 
 ### GET /reminders
-Get smart reminders/suggestions for the user.
+Get smart reminders for carousel display.
 
 **Query Parameters:**
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| date | string | Date for reminders (default: today) |
-| types | string | Comma-separated types: weather,commute,birthday,deadline |
+| date | string | Date for reminders (default: today from server_time) |
 
 **Response (200):**
 ```json
@@ -450,9 +618,7 @@ Get smart reminders/suggestions for the user.
         "temp_max": 25,
         "humidity": 65,
         "wind_speed": 12
-      },
-      "action_url": null,
-      "priority": 1
+      }
     },
     {
       "id": "rem_commute",
@@ -462,13 +628,13 @@ Get smart reminders/suggestions for the user.
       "bg_color": "#E8F5E9",
       "icon_bg": "#4ADE80",
       "data": {
-        "destination": "School",
+        "from": "home",
+        "to": "school",
         "duration_minutes": 25,
         "distance_km": 8.5,
         "traffic_status": "normal"
       },
-      "action_url": "https://maps.google.com/?q=...",
-      "priority": 2
+      "action_url": "https://maps.google.com/..."
     },
     {
       "id": "rem_birthday",
@@ -478,33 +644,70 @@ Get smart reminders/suggestions for the user.
       "bg_color": "#FCE4EC",
       "icon_bg": "#F472B6",
       "data": {
-        "event_id": "evt_001",
+        "related_event_id": "evt_106",
         "person_name": "Kai",
-        "event_date": "2025-12-01"
-      },
-      "action_url": null,
-      "priority": 1
+        "event_date": "2025-12-02"
+      }
     }
-  ]
+  ],
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+### GET /location/commute
+Get detailed commute information.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| from | string | "home", "school", "current", or coordinates "lat,lng" |
+| to | string | "home", "school", or coordinates "lat,lng" |
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "from": {
+      "type": "home",
+      "address": "123 Main Street, Sha Tin",
+      "coordinates": { "lat": 22.3964, "lng": 114.1095 }
+    },
+    "to": {
+      "type": "school",
+      "address": "CUHK, Sha Tin, Hong Kong",
+      "coordinates": { "lat": 22.4196, "lng": 114.2068 }
+    },
+    "routes": [
+      {
+        "mode": "driving",
+        "duration_minutes": 25,
+        "distance_km": 8.5,
+        "traffic_status": "normal"
+      },
+      {
+        "mode": "transit",
+        "duration_minutes": 35,
+        "distance_km": 9.2,
+        "transit_details": "MTR East Rail Line"
+      }
+    ],
+    "maps_url": "https://maps.google.com/?saddr=22.3964,114.1095&daddr=22.4196,114.2068"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ---
 
-## AI Agent Integration
+## 7. File Upload Module
 
-### POST /ai/parse-event
-Parse natural language into event data.
+### POST /files/upload
+Upload file attachment.
 
-**Request:**
-```json
-{
-  "text": "Meeting with John tomorrow at 3pm at Starbucks for 1 hour",
-  "context": {
-    "current_date": "2025-11-30",
-    "timezone": "Asia/Shanghai"
-  }
-}
+**Request (multipart/form-data):**
+```
+file: <binary>
 ```
 
 **Response (200):**
@@ -512,63 +715,43 @@ Parse natural language into event data.
 {
   "success": true,
   "data": {
-    "parsed": {
-      "title": "Meeting with John",
-      "date": "2025-12-01",
-      "is_all_day": false,
-      "start_time": "15:00",
-      "end_time": "16:00",
-      "location": "Starbucks",
-      "type_id": null,
-      "suggested_type": "type_events"
-    },
-    "confidence": 0.95,
-    "alternatives": [
-      {
-        "title": "Meeting with John at Starbucks",
-        "date": "2025-12-01",
-        "start_time": "15:00",
-        "end_time": "16:00"
-      }
-    ]
-  }
+    "id": "file_001",
+    "name": "document.pdf",
+    "url": "https://storage.example.com/files/document.pdf",
+    "size": 102400,
+    "mime_type": "application/pdf",
+    "created_at": "2025-12-01T10:30:00Z"
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
-### POST /ai/parse-calendar-type
-Parse natural language to create calendar type.
-
-**Request:**
-```json
-{
-  "text": "Create a fitness category with green color for my workout schedule"
-}
-```
+### DELETE /files/:id
+Delete uploaded file.
 
 **Response (200):**
 ```json
 {
   "success": true,
-  "data": {
-    "parsed": {
-      "name": "Fitness",
-      "color": "#22C55E"
-    },
-    "confidence": 0.92
-  }
+  "message": "File deleted successfully",
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
+
+---
+
+## 8. AI Integration Module
 
 ### POST /ai/quick-add
-Quickly add a task via natural language.
+Quick add task via natural language (for "Add a Task for Today" button).
 
 **Request:**
 ```json
 {
   "text": "买牛奶回家的路上",
   "context": {
-    "current_date": "2025-11-30",
-    "timezone": "Asia/Shanghai"
+    "current_date": "2025-12-01",
+    "timezone": "Asia/Hong_Kong"
   }
 }
 ```
@@ -579,34 +762,33 @@ Quickly add a task via natural language.
   "success": true,
   "data": {
     "event": {
-      "id": "evt_new_001",
+      "id": "evt_ai_001",
       "title": "买牛奶",
-      "date": "2025-11-30",
+      "date": "2025-12-01",
       "is_all_day": true,
-      "type_id": "type_general",
+      "type_id": "general",
       "color": "#6B7280",
       "completed": false
     },
-    "message": "已添加任务：买牛奶"
-  }
+    "parsed_intent": "task_creation",
+    "confidence": 0.95
+  },
+  "message": "已添加任务：买牛奶",
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
-### POST /ai/suggest
-Get AI suggestions based on context.
+### POST /ai/parse-event
+Parse natural language to event data (for Create Event modal AI input).
 
 **Request:**
 ```json
 {
+  "text": "明天下午3点在星巴克和John开会，大概1小时",
   "context": {
-    "current_date": "2025-11-30",
-    "upcoming_events": ["evt_001", "evt_002"],
-    "user_preferences": {
-      "work_hours": { "start": "09:00", "end": "18:00" },
-      "preferred_meeting_duration": 60
-    }
-  },
-  "request_type": "schedule_optimization"
+    "current_date": "2025-12-01",
+    "timezone": "Asia/Hong_Kong"
+  }
 }
 ```
 
@@ -615,37 +797,64 @@ Get AI suggestions based on context.
 {
   "success": true,
   "data": {
-    "suggestions": [
-      {
-        "type": "reschedule",
-        "message": "建议将'Team Meeting'移到上午，下午有连续3个会议可能会疲劳",
-        "action": {
-          "event_id": "evt_001",
-          "suggested_time": "10:00"
-        }
-      },
-      {
-        "type": "reminder",
-        "message": "明天是Kai的生日，要不要现在设置一个买礼物的提醒？",
-        "action": {
-          "create_event": {
-            "title": "买生日礼物",
-            "date": "2025-11-30",
-            "is_all_day": true
-          }
-        }
-      }
-    ]
-  }
+    "parsed": {
+      "title": "和John开会",
+      "date": "2025-12-02",
+      "is_all_day": false,
+      "start_time": "15:00",
+      "end_time": "16:00",
+      "location": "星巴克",
+      "suggested_type_id": "events"
+    },
+    "confidence": 0.92,
+    "raw_entities": {
+      "time": "明天下午3点",
+      "duration": "1小时",
+      "location": "星巴克",
+      "person": "John"
+    }
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
-### GET /ai/agent/events
-Agent-specific endpoint to read all events (for AI agent integration).
+### POST /ai/parse-calendar-type
+Parse natural language to create calendar type (for Create Type modal AI input).
+
+**Request:**
+```json
+{
+  "text": "创建一个绿色的健身分类"
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "data": {
+    "parsed": {
+      "name": "健身",
+      "color": "#22C55E"
+    },
+    "confidence": 0.90
+  },
+  "server_time": "2025-12-01T10:30:00Z"
+}
+```
+
+---
+
+## 9. AI Agent Module (External Agent Access)
+
+These endpoints are designed for external AI agents to interact with user's calendar.
+
+### GET /ai/agent/user-data
+Agent retrieves user's complete data including location and addresses.
 
 **Headers:**
 ```
-Authorization: Bearer <agent_token>
+Authorization: Bearer <agent_access_token>
 X-Agent-ID: agent_jarvis_001
 ```
 
@@ -661,31 +870,51 @@ X-Agent-ID: agent_jarvis_001
 {
   "success": true,
   "data": {
-    "user_id": "user_123",
+    "user": {
+      "account_id": "jarvis@cuhk.com",
+      "home_address": "123 Main Street, Sha Tin",
+      "school_address": "CUHK, Sha Tin, Hong Kong",
+      "current_location": {
+        "latitude": 22.4196,
+        "longitude": 114.2068,
+        "accuracy": 10,
+        "timestamp": "2025-12-01T10:25:00Z"
+      }
+    },
     "events": [
       {
         "id": "evt_001",
         "title": "Team Meeting",
-        "date": "2025-11-30",
+        "date": "2025-12-01",
         "start_time": "10:00",
         "end_time": "11:00",
-        "type": "Events",
+        "location": "Conference Room",
+        "type_name": "Events",
         "completed": false
       }
+    ],
+    "calendar_types": [
+      { "id": "general", "name": "General", "color": "#6B7280" },
+      { "id": "routine", "name": "Routine", "color": "#EC4899" },
+      { "id": "events", "name": "Events", "color": "#F59E0B" },
+      { "id": "holidays", "name": "Holidays", "color": "#3B82F6" },
+      { "id": "school", "name": "School", "color": "#22C55E" }
     ],
     "summary": {
       "total_events": 15,
       "completed": 5,
       "pending": 10,
       "today": 4,
+      "tomorrow": 2,
       "this_week": 12
     }
-  }
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ### POST /ai/agent/action
-Agent performs action on behalf of user.
+Agent performs action on user's calendar.
 
 **Request:**
 ```json
@@ -694,13 +923,19 @@ Agent performs action on behalf of user.
   "action": "create_event",
   "payload": {
     "title": "Reminder: Call Mom",
-    "date": "2025-12-01",
+    "date": "2025-12-02",
     "is_all_day": true,
-    "type_id": "type_general"
+    "type_id": "general"
   },
   "reason": "User requested via voice command"
 }
 ```
+
+**Available Actions:**
+- `create_event` - Create new event
+- `update_event` - Update existing event
+- `delete_event` - Delete event
+- `complete_event` - Mark event as complete
 
 **Response (200):**
 ```json
@@ -708,232 +943,243 @@ Agent performs action on behalf of user.
   "success": true,
   "data": {
     "action_id": "action_001",
+    "action": "create_event",
     "result": {
-      "event_id": "evt_new_002",
+      "event_id": "evt_agent_001",
       "status": "created"
     }
-  }
-}
-```
-
----
-
-## File Upload
-
-### POST /files/upload
-Upload a file attachment.
-
-**Request (multipart/form-data):**
-```
-file: <binary>
-type: attachment
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "file_001",
-    "name": "document.pdf",
-    "url": "https://storage.example.com/files/document.pdf",
-    "size": 102400,
-    "mime_type": "application/pdf",
-    "created_at": "2025-11-30T10:00:00Z"
-  }
-}
-```
-
-### DELETE /files/:id
-Delete a file.
-
----
-
-## User Settings
-
-### GET /settings
-Get user settings.
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "data": {
-    "profile": {
-      "name": "John Doe",
-      "email": "john@example.com",
-      "avatar": "https://example.com/avatar.jpg"
-    },
-    "preferences": {
-      "language": "en",
-      "timezone": "Asia/Shanghai",
-      "time_format": "12h",
-      "week_start": "sunday",
-      "theme": "light"
-    },
-    "notifications": {
-      "push_enabled": true,
-      "email_enabled": false,
-      "default_reminder_minutes": 15
-    },
-    "ai": {
-      "suggestions_enabled": true,
-      "voice_input_enabled": true,
-      "auto_categorize": true
-    }
-  }
-}
-```
-
-### PUT /settings
-Update user settings.
-
-**Request:**
-```json
-{
-  "preferences": {
-    "language": "zh",
-    "time_format": "24h"
   },
-  "notifications": {
-    "push_enabled": true,
-    "default_reminder_minutes": 30
-  }
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
-### PUT /settings/profile
-Update user profile.
+### POST /ai/agent/suggest
+Get AI-powered suggestions for the user.
 
 **Request:**
 ```json
 {
-  "name": "John Smith",
-  "avatar_file_id": "file_avatar_001"
+  "context": {
+    "current_date": "2025-12-01",
+    "current_time": "10:30",
+    "user_location": { "lat": 22.4196, "lng": 114.2068 }
+  },
+  "request_type": "daily_briefing"
 }
 ```
 
-### DELETE /settings/account
-Delete user account.
-
-**Request:**
+**Response (200):**
 ```json
 {
-  "password": "current_password",
-  "confirmation": "DELETE"
+  "success": true,
+  "data": {
+    "briefing": "今天有4个日程安排。天气不错，适合外出。别忘了明天是Kai的生日！",
+    "suggestions": [
+      {
+        "type": "reminder",
+        "message": "明天是Kai的生日，要不要现在设置一个买礼物的提醒？",
+        "action": {
+          "type": "create_event",
+          "payload": {
+            "title": "买生日礼物",
+            "date": "2025-12-01",
+            "is_all_day": true
+          }
+        }
+      },
+      {
+        "type": "commute",
+        "message": "您15:00有Therapy预约，建议14:35出发",
+        "data": {
+          "event_id": "evt_003",
+          "suggested_departure": "14:35"
+        }
+      }
+    ]
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
 ---
 
-## Error Responses
+## 10. Error Handling
 
-All endpoints may return the following error format:
-
+### Error Response Format
 ```json
 {
   "success": false,
   "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid date format",
-    "details": {
-      "field": "date",
-      "expected": "YYYY-MM-DD",
-      "received": "30-11-2025"
-    }
-  }
+    "code": "ERROR_CODE",
+    "message": "Human readable error message",
+    "details": { ... }
+  },
+  "server_time": "2025-12-01T10:30:00Z"
 }
 ```
 
-### Common Error Codes
-
+### Error Codes
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
 | UNAUTHORIZED | 401 | Missing or invalid authentication |
 | FORBIDDEN | 403 | Insufficient permissions |
 | NOT_FOUND | 404 | Resource not found |
 | VALIDATION_ERROR | 400 | Invalid request data |
-| CONFLICT | 409 | Resource conflict (e.g., duplicate) |
+| DUPLICATE_ACCOUNT | 409 | Account ID already exists |
+| TYPE_NOT_DELETABLE | 400 | Cannot delete default type |
+| FILE_TOO_LARGE | 413 | File exceeds size limit (10MB) |
 | RATE_LIMITED | 429 | Too many requests |
-| INTERNAL_ERROR | 500 | Server error |
+| AI_PARSE_FAILED | 422 | AI could not parse input |
+| LOCATION_ERROR | 400 | Invalid location data |
+| INTERNAL_ERROR | 500 | Server internal error |
 
 ---
 
-## Webhooks (Optional)
+## 11. Frontend Feature → API Mapping
 
-### Event Webhooks
+### Authentication
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| Login | POST /auth/login |
+| Logout | POST /auth/logout |
 
-Configure webhooks to receive real-time updates:
+### User Settings
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| Get account info | GET /user |
+| Update addresses | PUT /user |
+| Get current location | GET /user/location |
+| Update location | POST /user/location |
 
-**POST /webhooks**
+### Calendar Navigation
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| Get today's date | GET /time |
+| View events by date | GET /events?date=YYYY-MM-DD |
+| Today button | GET /time + GET /events?date=<today> |
+
+### Event Management
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| List events | GET /events |
+| Create event | POST /events |
+| Edit event | PUT /events/:id |
+| Delete event | DELETE /events/:id |
+| Toggle complete | PATCH /events/:id/complete |
+| Add link | POST /events/:id/links |
+| Remove link | DELETE /events/:id/links |
+| Upload attachment | POST /files/upload |
+| Share (screenshot) | POST /events/:id/share |
+
+### Calendar Types
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| List types | GET /calendar-types |
+| Create type | POST /calendar-types |
+| Update type | PUT /calendar-types/:id |
+| Toggle visibility | PATCH /calendar-types/:id/visibility |
+| Delete type | DELETE /calendar-types/:id |
+
+### Smart Reminders
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| Get reminders carousel | GET /reminders |
+| Get commute info | GET /location/commute |
+
+### AI Features
+| Frontend Feature | API Endpoint |
+|------------------|--------------|
+| Quick add task (button) | POST /ai/quick-add |
+| Event AI input | POST /ai/parse-event |
+| Type AI input | POST /ai/parse-calendar-type |
+
+### Agent Integration (已实现)
+| Feature | API Endpoint |
+|---------|--------------|
+| Read user/schedule info | GET /agent/info |
+| Perform action | POST /agent/action |
+
+---
+
+## 12. Agent API Details
+
+### GET /agent/info
+获取完整的用户信息和日程数据，供AI Agent使用。
+
+**Query Parameters:**
+- `start_date` (optional): 日期范围起始 (YYYY-MM-DD)，默认今天
+- `end_date` (optional): 日期范围结束 (YYYY-MM-DD)，默认30天后
+
+**Response (200):**
 ```json
 {
-  "url": "https://your-server.com/webhook",
-  "events": ["event.created", "event.updated", "event.deleted", "event.completed"]
-}
-```
-
-**Webhook Payload:**
-```json
-{
-  "event_type": "event.created",
-  "timestamp": "2025-11-30T10:00:00Z",
+  "success": true,
   "data": {
-    "id": "evt_001",
-    "title": "New Event",
-    "date": "2025-12-01"
+    "user": {
+      "account_id": "jarvis@cuhk.com",
+      "home_address": "123 Main Street, Sha Tin",
+      "school_address": "CUHK, Sha Tin, Hong Kong"
+    },
+    "location": {
+      "current": {
+        "latitude": 22.4199,
+        "longitude": 114.2073,
+        "accuracy": 15,
+        "timestamp": "2025-12-01T08:00:00Z"
+      },
+      "previous": {
+        "latitude": 22.3964,
+        "longitude": 114.1095,
+        "accuracy": 20,
+        "timestamp": "2025-11-30T18:00:00Z"
+      }
+    },
+    "calendar_types": [...],
+    "events": [...],
+    "summary": {
+      "total_events": 15,
+      "completed_events": 5,
+      "pending_events": 10,
+      "today_events": 4
+    }
   }
 }
 ```
 
+### POST /agent/action
+Agent 代理执行操作。
+
+**Supported Actions:**
+| Action | Payload Fields |
+|--------|----------------|
+| `create_event` | title, date, is_all_day, start_time, end_time, location, description, type_id, links |
+| `update_event` | event_id, (任意event字段) |
+| `delete_event` | event_id |
+| `complete_event` | event_id, completed (boolean) |
+| `create_calendar_type` | name, color |
+
 ---
 
-## Rate Limits
+## 13. Rate Limits
 
-| Endpoint Type | Rate Limit |
-|---------------|------------|
-| Standard API | 100 requests/minute |
-| AI Endpoints | 20 requests/minute |
-| File Upload | 10 requests/minute |
-| Agent API | 50 requests/minute |
-
----
-
-## SDK/Client Integration
-
-### JavaScript/TypeScript
-```typescript
-import { JarvisClient } from '@jarvis/sdk';
-
-const client = new JarvisClient({
-  apiKey: 'your-api-key',
-  baseUrl: 'https://api.jarvis-calendar.com/v1'
-});
-
-// Get events
-const events = await client.events.list({ date: '2025-11-30' });
-
-// Create event via AI
-const parsed = await client.ai.parseEvent('Meeting tomorrow at 3pm');
-const newEvent = await client.events.create(parsed.data.parsed);
-
-// Agent integration
-const agentClient = new JarvisAgentClient({
-  agentId: 'agent_001',
-  agentToken: 'agent-token'
-});
-const schedule = await agentClient.getSchedule('2025-11-30', '2025-12-07');
-```
+| Endpoint Type | Limit |
+|---------------|-------|
+| Standard API | 100 req/min |
+| AI Endpoints | 20 req/min |
+| File Upload | 10 req/min |
+| Agent API | 50 req/min |
 
 ---
 
 ## Changelog
 
-### v1.0.0 (2025-11-30)
-- Initial API release
-- Events CRUD operations
+### v1.0.0 (2025-12-01)
+- Initial API version
+- Authentication with account ID
+- User profile with addresses and location
+- Real-time server time for "today" sync
+- Events CRUD with attachments and links
 - Calendar types management
+- Smart reminders (weather, commute, important)
 - AI natural language parsing
-- Smart reminders
-- User settings
-- Agent integration endpoints
+- External agent integration endpoints

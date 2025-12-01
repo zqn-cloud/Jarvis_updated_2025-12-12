@@ -1,5 +1,15 @@
 <template>
-  <div class="app-wrapper">
+  <!-- Loading Screen -->
+  <div v-if="isLoading" class="loading-screen">
+    <div class="loading-spinner"></div>
+    <p>Loading...</p>
+  </div>
+
+  <!-- Login Screen -->
+  <LoginModal v-else-if="!isLoggedIn" @login="handleLogin" />
+
+  <!-- Main App -->
+  <div v-else class="app-wrapper">
     <div class="app-container">
       <Sidebar>
         <template #mini-calendar>
@@ -24,7 +34,7 @@
         <!-- Header Bar -->
         <header class="header-bar">
           <div class="header-left">
-            <DateNavigation v-model:date="currentDate" />
+            <DateNavigation v-model:date="currentDate" @go-today="goToToday" />
           </div>
           <div class="header-right">
             <button class="header-icon-btn active">
@@ -84,14 +94,18 @@
     />
     <SettingsModal 
       v-if="showSettings" 
+      :accountId="currentUser.accountId"
+      :homeAddress="currentUser.homeAddress"
+      :schoolAddress="currentUser.schoolAddress"
       @close="showSettings = false"
       @save="handleSaveSettings"
+      @logout="handleLogout"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { format } from 'date-fns';
 import { Check, Calendar, Settings } from 'lucide-vue-next';
 import Sidebar from './components/layout/Sidebar.vue';
@@ -105,182 +119,28 @@ import ReminderCarousel from './components/ReminderCarousel.vue';
 import CreateCalendarTypeModal from './components/modals/CreateCalendarTypeModal.vue';
 import CreateEventModal from './components/modals/CreateEventModal.vue';
 import SettingsModal from './components/modals/SettingsModal.vue';
+import LoginModal from './components/modals/LoginModal.vue';
+import { authAPI, userAPI, calendarTypesAPI, eventsAPI, filesAPI, setAccessToken, getAccessToken } from './services/api.js';
 import './assets/main.css';
 
-// State
+// ==================== STATE ====================
+const isLoading = ref(true);
+const isLoggedIn = ref(false);
+const currentUser = ref({
+  accountId: '',
+  homeAddress: '',
+  schoolAddress: '',
+  currentLocation: null
+});
+
 const showCreateType = ref(false);
 const showCreateEvent = ref(false);
 const showSettings = ref(false);
 const editingTask = ref(null);
-const currentDate = ref(new Date(2025, 10, 30)); // November 30, 2025
 
-const calendarTypes = ref([
-  { id: 'general', name: 'General', color: '#6B7280', visible: true },
-  { id: 'routine', name: 'Routine', color: '#EC4899', visible: true },
-  { id: 'events', name: 'Events', color: '#F59E0B', visible: true },
-  { id: 'holidays', name: 'Holidays', color: '#3B82F6', visible: true },
-  { id: 'school', name: 'School', color: '#22C55E', visible: true },
-]);
-
-const tasks = ref([
-  // November 28, 2025
-  {
-    id: '101',
-    title: 'Gym Session',
-    isAllDay: false,
-    startTime: '07:00',
-    endTime: '08:30',
-    date: '2025-11-28',
-    typeId: 'routine',
-    color: '#EC4899',
-    completed: false,
-    expanded: false
-  },
-  {
-    id: '102',
-    title: 'Black Friday Shopping',
-    isAllDay: true,
-    date: '2025-11-28',
-    typeId: 'events',
-    color: '#F59E0B',
-    completed: true,
-    expanded: false
-  },
-  // November 29, 2025
-  {
-    id: '103',
-    title: 'Weekend Brunch',
-    isAllDay: false,
-    startTime: '10:00',
-    endTime: '12:00',
-    date: '2025-11-29',
-    typeId: 'events',
-    color: '#F59E0B',
-    completed: false,
-    expanded: false
-  },
-  {
-    id: '104',
-    title: 'Study for Exams',
-    isAllDay: false,
-    startTime: '14:00',
-    endTime: '18:00',
-    date: '2025-11-29',
-    typeId: 'school',
-    color: '#22C55E',
-    completed: false,
-    expanded: false
-  },
-  // November 30, 2025 (Today)
-  {
-    id: '1',
-    title: 'KAI BIRTHDAY TOMORROW',
-    isAllDay: true,
-    date: '2025-11-30',
-    typeId: 'events',
-    color: '#F59E0B',
-    completed: false,
-    expanded: false
-  },
-  {
-    id: '2',
-    title: 'SIGN UP TO UNI',
-    isAllDay: true,
-    date: '2025-11-30',
-    typeId: 'events',
-    color: '#F59E0B',
-    completed: true,
-    attachment: { name: 'DOcs.pdf', url: '#' },
-    expanded: false,
-    links: ['https://university.edu/apply']
-  },
-  {
-    id: '3',
-    title: 'Therapy',
-    isAllDay: false,
-    startTime: '15:00',
-    endTime: '17:00',
-    date: '2025-11-30',
-    typeId: 'routine',
-    color: '#EC4899',
-    completed: false,
-    expanded: false
-  },
-  {
-    id: '105',
-    title: 'Morning Yoga',
-    isAllDay: false,
-    startTime: '06:30',
-    endTime: '07:30',
-    date: '2025-11-30',
-    typeId: 'routine',
-    color: '#EC4899',
-    completed: true,
-    expanded: false
-  },
-  // December 1, 2025
-  {
-    id: '106',
-    title: "Kai's Birthday Party",
-    isAllDay: false,
-    startTime: '18:00',
-    endTime: '22:00',
-    date: '2025-12-01',
-    typeId: 'events',
-    color: '#F59E0B',
-    completed: false,
-    expanded: false,
-    location: "Kai's House"
-  },
-  {
-    id: '107',
-    title: 'Start of Advent',
-    isAllDay: true,
-    date: '2025-12-01',
-    typeId: 'holidays',
-    color: '#3B82F6',
-    completed: false,
-    expanded: false
-  },
-  // December 2, 2025
-  {
-    id: '108',
-    title: 'Project Deadline',
-    isAllDay: true,
-    date: '2025-12-02',
-    typeId: 'school',
-    color: '#22C55E',
-    completed: false,
-    expanded: false,
-    attachment: { name: 'Project_Brief.pdf', url: '#' }
-  },
-  {
-    id: '109',
-    title: 'Team Meeting',
-    isAllDay: false,
-    startTime: '10:00',
-    endTime: '11:00',
-    date: '2025-12-02',
-    typeId: 'general',
-    color: '#6B7280',
-    completed: false,
-    expanded: false
-  },
-  // December 3, 2025
-  {
-    id: '110',
-    title: 'Doctor Appointment',
-    isAllDay: false,
-    startTime: '09:00',
-    endTime: '10:00',
-    date: '2025-12-03',
-    typeId: 'routine',
-    color: '#EC4899',
-    completed: false,
-    expanded: false,
-    location: 'City Hospital'
-  }
-]);
+const currentDate = ref(new Date());
+const calendarTypes = ref([]);
+const tasks = ref([]);
 
 const reminders = ref([
   {
@@ -309,7 +169,148 @@ const reminders = ref([
   }
 ]);
 
-// Computed - Filter tasks by selected date AND visible types
+// ==================== DATA TRANSFORMATION ====================
+// 后端 snake_case -> 前端 camelCase
+const transformEventFromBackend = (event) => ({
+  id: event.id,
+  title: event.title,
+  date: event.date,
+  isAllDay: event.is_all_day,
+  startTime: event.start_time,
+  endTime: event.end_time,
+  location: event.location || '',
+  description: event.description || '',
+  typeId: event.type_id,
+  color: event.color,
+  completed: event.completed,
+  expanded: event.expanded || false,
+  links: event.links || [],
+  attachment: event.attachment
+});
+
+// 前端 camelCase -> 后端 snake_case
+const transformEventToBackend = (event) => ({
+  title: event.title,
+  date: event.date,
+  is_all_day: event.isAllDay,
+  start_time: event.startTime || null,
+  end_time: event.endTime || null,
+  location: event.location || '',
+  description: event.description || '',
+  type_id: event.typeId,
+  links: event.links || [],
+  attachment_id: event.attachmentId || null
+});
+
+const transformTypeFromBackend = (type) => ({
+  id: type.type_id,
+  name: type.name,
+  color: type.color,
+  visible: type.is_visible,
+  isDeletable: type.is_deletable
+});
+
+// ==================== API CALLS ====================
+const loadUserData = async () => {
+  try {
+    const userRes = await userAPI.getUser();
+    if (userRes.success) {
+      currentUser.value = {
+        accountId: userRes.data.account_id,
+        homeAddress: userRes.data.home_address || '',
+        schoolAddress: userRes.data.school_address || '',
+        currentLocation: userRes.data.current_location
+      };
+    }
+  } catch (err) {
+    console.error('Failed to load user data:', err);
+  }
+};
+
+const loadCalendarTypes = async () => {
+  try {
+    const res = await calendarTypesAPI.getAll();
+    if (res.success) {
+      calendarTypes.value = res.data.map(transformTypeFromBackend);
+    }
+  } catch (err) {
+    console.error('Failed to load calendar types:', err);
+  }
+};
+
+const loadEvents = async () => {
+  try {
+    const res = await eventsAPI.getAll();
+    if (res.success) {
+      tasks.value = res.data.events.map(transformEventFromBackend);
+    }
+  } catch (err) {
+    console.error('Failed to load events:', err);
+  }
+};
+
+const refreshData = async () => {
+  await Promise.all([
+    loadUserData(),
+    loadCalendarTypes(),
+    loadEvents()
+  ]);
+};
+
+// ==================== INIT ====================
+onMounted(async () => {
+  // 确保初始状态为未登录
+  isLoggedIn.value = false;
+  
+  // Check for existing token
+  const token = getAccessToken();
+  if (token) {
+    try {
+      // 先验证token是否有效，通过获取用户信息
+      const userRes = await userAPI.getUser();
+      
+      // 如果用户API成功，说明token有效，继续加载其他数据
+      if (userRes.success) {
+        currentUser.value = {
+          accountId: userRes.data.account_id,
+          homeAddress: userRes.data.home_address || '',
+          schoolAddress: userRes.data.school_address || '',
+          currentLocation: userRes.data.current_location
+        };
+        
+        // 并行加载其他数据
+        const [typesRes, eventsRes] = await Promise.all([
+          calendarTypesAPI.getAll(),
+          eventsAPI.getAll()
+        ]);
+        
+        if (typesRes.success) {
+          calendarTypes.value = typesRes.data.map(transformTypeFromBackend);
+        }
+        
+        if (eventsRes.success) {
+          tasks.value = eventsRes.data.events.map(transformEventFromBackend);
+        }
+        
+        // 只有成功加载所有数据后才设置为已登录
+        isLoggedIn.value = true;
+      } else {
+        // API返回失败，清除token
+        setAccessToken(null);
+        localStorage.removeItem('jarvis_access_token');
+      }
+    } catch (err) {
+      console.error('Session invalid:', err);
+      // 任何错误都清除token，显示登录界面
+      setAccessToken(null);
+      localStorage.removeItem('jarvis_access_token');
+      isLoggedIn.value = false;
+    }
+  }
+  isLoading.value = false;
+});
+
+// ==================== COMPUTED ====================
 const filteredTasks = computed(() => {
   const visibleTypeIds = calendarTypes.value.filter(t => t.visible).map(t => t.id);
   const dateStr = format(currentDate.value, 'yyyy-MM-dd');
@@ -322,9 +323,54 @@ const filteredTasks = computed(() => {
   });
 });
 
-// Methods
+// ==================== AUTH HANDLERS ====================
+const handleLogin = async (accountId) => {
+  isLoading.value = true;
+  try {
+    const res = await authAPI.login(accountId);
+    if (res.success) {
+      // 直接从登录响应中获取用户信息
+      currentUser.value = {
+        accountId: res.data.user.account_id,
+        homeAddress: res.data.user.home_address || '',
+        schoolAddress: res.data.user.school_address || '',
+        currentLocation: res.data.user.current_location
+      };
+      // 加载日历类型和事件
+      await Promise.all([loadCalendarTypes(), loadEvents()]);
+      isLoggedIn.value = true;
+    }
+  } catch (err) {
+    console.error('Login failed:', err);
+    alert('Login failed. Please try again.');
+  } finally {
+    isLoading.value = false;
+  }
+};
+
+const handleLogout = async () => {
+  isLoading.value = true;
+  try {
+    await authAPI.logout();
+  } catch (err) {
+    console.error('Logout error:', err);
+  } finally {
+    isLoggedIn.value = false;
+    showSettings.value = false;
+    currentUser.value = { accountId: '', homeAddress: '', schoolAddress: '', currentLocation: null };
+    tasks.value = [];
+    calendarTypes.value = [];
+    isLoading.value = false;
+  }
+};
+
+// ==================== CALENDAR HANDLERS ====================
 const handleSelectDate = (date) => {
   currentDate.value = date;
+};
+
+const goToToday = () => {
+  currentDate.value = new Date();
 };
 
 const handleOpenModal = (type) => {
@@ -340,34 +386,68 @@ const closeEventModal = () => {
   editingTask.value = null;
 };
 
-const handleToggleCategory = (id) => {
+const handleToggleCategory = async (id) => {
   const cat = calendarTypes.value.find(c => c.id === id);
-  if (cat) cat.visible = !cat.visible;
-};
-
-const handleDeleteType = (id) => {
-  // Move all tasks of this type to "general"
-  tasks.value = tasks.value.map(task => {
-    if (task.typeId === id) {
-      const generalType = calendarTypes.value.find(t => t.id === 'general');
-      return { ...task, typeId: 'general', color: generalType?.color || '#6B7280' };
+  if (cat) {
+    const newVisible = !cat.visible;
+    cat.visible = newVisible;
+    
+    try {
+      await calendarTypesAPI.toggleVisibility(id, newVisible);
+    } catch (err) {
+      console.error('Failed to toggle visibility:', err);
+      cat.visible = !newVisible; // revert
     }
-    return task;
-  });
-  
-  // Remove the type
-  calendarTypes.value = calendarTypes.value.filter(c => c.id !== id);
-};
-
-const handleUpdateTask = (updatedTask) => {
-  const index = tasks.value.findIndex(t => t.id === updatedTask.id);
-  if (index !== -1) {
-    tasks.value[index] = { ...tasks.value[index], ...updatedTask };
   }
 };
 
-const handleDeleteTask = (taskId) => {
-  tasks.value = tasks.value.filter(t => t.id !== taskId);
+const handleDeleteType = async (id) => {
+  try {
+    await calendarTypesAPI.delete(id);
+    // Reload data to get updated events
+    await Promise.all([loadCalendarTypes(), loadEvents()]);
+  } catch (err) {
+    console.error('Failed to delete type:', err);
+    alert('Failed to delete calendar type');
+  }
+};
+
+// ==================== TASK HANDLERS ====================
+const handleUpdateTask = async (updatedTask) => {
+  const index = tasks.value.findIndex(t => t.id === updatedTask.id);
+  if (index !== -1) {
+    // Optimistic update
+    const oldTask = { ...tasks.value[index] };
+    tasks.value[index] = { ...tasks.value[index], ...updatedTask };
+    
+    try {
+      if ('completed' in updatedTask && Object.keys(updatedTask).length === 2) {
+        // Only completion status changed
+        await eventsAPI.toggleComplete(updatedTask.id, updatedTask.completed);
+      } else {
+        // Other fields changed
+        await eventsAPI.update(updatedTask.id, transformEventToBackend(updatedTask));
+      }
+    } catch (err) {
+      console.error('Failed to update task:', err);
+      tasks.value[index] = oldTask; // revert
+    }
+  }
+};
+
+const handleDeleteTask = async (taskId) => {
+  const index = tasks.value.findIndex(t => t.id === taskId);
+  if (index !== -1) {
+    const deletedTask = tasks.value[index];
+    tasks.value.splice(index, 1);
+    
+    try {
+      await eventsAPI.delete(taskId);
+    } catch (err) {
+      console.error('Failed to delete task:', err);
+      tasks.value.splice(index, 0, deletedTask); // revert
+    }
+  }
 };
 
 const handleEditTask = (task) => {
@@ -375,68 +455,189 @@ const handleEditTask = (task) => {
   showCreateEvent.value = true;
 };
 
-const handleSaveType = (newType) => {
-  calendarTypes.value.push({
-    id: Date.now().toString(),
-    name: newType.name,
-    color: newType.color,
-    visible: true
-  });
-};
-
-const handleSaveEvent = (eventData) => {
-  const type = calendarTypes.value.find(t => t.id === eventData.typeId);
-  const color = type?.color || '#6B7280';
-  
-  if (eventData.id) {
-    // Edit existing
-    const index = tasks.value.findIndex(t => t.id === eventData.id);
-    if (index !== -1) {
-      tasks.value[index] = {
-        ...tasks.value[index],
-        ...eventData,
-        color
-      };
+const handleSaveType = async (newType) => {
+  try {
+    const res = await calendarTypesAPI.create(newType.name, newType.color);
+    if (res.success) {
+      calendarTypes.value.push(transformTypeFromBackend(res.data));
+      showCreateType.value = false;
     }
-  } else {
-    // Create new
-    tasks.value.push({
-      id: Date.now().toString(),
-      ...eventData,
-      color,
-      completed: false,
-      expanded: false
-    });
+  } catch (err) {
+    console.error('Failed to create type:', err);
+    alert('Failed to create calendar type');
   }
 };
 
-const handleAITaskSubmit = (text) => {
-  // TODO: Call AI API to parse natural language
-  console.log('AI Task Input:', text);
+const handleSaveEvent = async (eventData) => {
+  const type = calendarTypes.value.find(t => t.id === eventData.typeId);
+  const color = type?.color || '#6B7280';
+  
+  try {
+    // 处理附件删除
+    if (eventData.deleteAttachment) {
+      try {
+        await filesAPI.delete(eventData.deleteAttachment);
+      } catch (e) {
+        console.error('Failed to delete attachment:', e);
+      }
+    }
+    
+    // 处理文件上传
+    let attachmentId = null;
+    if (eventData.attachment) {
+      if (eventData.attachment.file) {
+        // 新文件需要上传
+        const uploadRes = await filesAPI.upload(eventData.attachment.file);
+        if (uploadRes.success) {
+          attachmentId = uploadRes.data.id;
+        }
+      } else if (eventData.attachment.id) {
+        // 已有文件，使用现有ID
+        attachmentId = eventData.attachment.id;
+      }
+    }
+    
+    // 构建后端数据
+    const backendData = {
+      ...transformEventToBackend(eventData),
+      attachment_id: attachmentId
+    };
+    
+    if (eventData.id) {
+      // Edit existing - 需要同步更新链接
+      const res = await eventsAPI.update(eventData.id, backendData);
+      if (res.success) {
+        // 获取原始任务的链接，用于对比
+        const originalTask = tasks.value.find(t => t.id === eventData.id);
+        const originalLinks = originalTask?.links || [];
+        const newLinks = eventData.links || [];
+        
+        // 删除被移除的链接
+        for (const link of originalLinks) {
+          if (!newLinks.includes(link)) {
+            try {
+              await eventsAPI.removeLink(eventData.id, link);
+            } catch (e) {
+              console.error('Failed to remove link:', e);
+            }
+          }
+        }
+        
+        // 添加新链接
+        for (const link of newLinks) {
+          if (!originalLinks.includes(link)) {
+            try {
+              await eventsAPI.addLink(eventData.id, link);
+            } catch (e) {
+              console.error('Failed to add link:', e);
+            }
+          }
+        }
+        
+        // 重新获取更新后的事件数据
+        const updatedRes = await eventsAPI.get(eventData.id);
+        if (updatedRes.success) {
+          const index = tasks.value.findIndex(t => t.id === eventData.id);
+          if (index !== -1) {
+            tasks.value[index] = transformEventFromBackend(updatedRes.data);
+          }
+        }
+        closeEventModal();
+      }
+    } else {
+      // Create new
+      const res = await eventsAPI.create(backendData);
+      if (res.success) {
+        tasks.value.push(transformEventFromBackend(res.data));
+        closeEventModal();
+      }
+    }
+  } catch (err) {
+    console.error('Failed to save event:', err);
+    alert('Failed to save event');
+  }
+};
+
+const handleAITaskSubmit = async (text) => {
+  // AI相关暂不实现，直接创建一个普通任务
   const type = calendarTypes.value.find(t => t.id === 'general');
-  tasks.value.push({
-    id: Date.now().toString(),
+  const eventData = {
     title: text,
-    isAllDay: true,
     date: format(currentDate.value, 'yyyy-MM-dd'),
-    typeId: 'general',
-    color: type?.color || '#6B7280',
-    completed: false,
-    expanded: false
-  });
+    isAllDay: true,
+    typeId: 'general'
+  };
+  
+  try {
+    const res = await eventsAPI.create(transformEventToBackend(eventData));
+    if (res.success) {
+      tasks.value.push(transformEventFromBackend(res.data));
+    }
+  } catch (err) {
+    console.error('Failed to create task:', err);
+  }
 };
 
 const handleEventAISubmit = (text) => {
   console.log('Event AI Input:', text);
+  // AI相关暂不实现
 };
 
-const handleSaveSettings = (newSettings) => {
-  console.log('Settings saved:', newSettings);
-  // TODO: Call API to save settings
+const handleSaveSettings = async (settings) => {
+  try {
+    await userAPI.updateUser({
+      home_address: settings.homeAddress,
+      school_address: settings.schoolAddress
+    });
+    
+    currentUser.value.homeAddress = settings.homeAddress;
+    currentUser.value.schoolAddress = settings.schoolAddress;
+    
+    if (settings.currentLocation) {
+      await userAPI.updateLocation(
+        settings.currentLocation.latitude,
+        settings.currentLocation.longitude,
+        settings.currentLocation.accuracy
+      );
+      currentUser.value.currentLocation = settings.currentLocation;
+    }
+  } catch (err) {
+    console.error('Failed to save settings:', err);
+    alert('Failed to save settings');
+  }
 };
 </script>
 
 <style scoped>
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #E0E7FF 0%, #F3E8FF 50%, #FCE7F3 100%);
+  gap: 16px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #E5E7EB;
+  border-top-color: #6366F1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-screen p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
 .app-wrapper {
   width: 100vw;
   height: 100vh;

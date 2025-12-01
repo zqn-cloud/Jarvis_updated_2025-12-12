@@ -146,10 +146,10 @@
             />
             <div class="file-upload-btn" @click="$refs.fileInput.click()">
               <Paperclip :size="16" />
-              <span v-if="!form.attachment">Choose file...</span>
+              <span v-if="!hasValidAttachment">Choose file...</span>
               <span v-else class="file-name">{{ form.attachment.name }}</span>
             </div>
-            <button v-if="form.attachment" class="clear-file" @click="clearFile">
+            <button v-if="hasValidAttachment" class="clear-file" @click.stop="clearFile" type="button">
               <X :size="14" />
             </button>
           </div>
@@ -207,18 +207,41 @@ const form = reactive({
   attachment: null
 });
 
-// If editing, populate form
+// 重置表单为创建模式
+const resetForm = () => {
+  form.title = '';
+  form.date = formatDateForInput(props.initialDate);
+  form.isAllDay = false;
+  form.startTime = '09:00';
+  form.endTime = '10:00';
+  form.location = '';
+  form.links = [];
+  form.typeId = props.calendarTypes[0]?.id || 'general';
+  form.attachment = null;
+  newLink.value = '';
+  if (fileInput.value) {
+    fileInput.value.value = '';
+  }
+};
+
+// If editing, populate form; otherwise reset
 watch(() => props.editTask, (task) => {
   if (task) {
+    // 编辑模式：填充表单数据
     form.title = task.title || '';
     form.date = task.date || formatDateForInput(props.initialDate);
-    form.isAllDay = task.isAllDay || false;
+    form.isAllDay = task.isAllDay !== undefined ? task.isAllDay : false;
     form.startTime = task.startTime || '09:00';
     form.endTime = task.endTime || '10:00';
     form.location = task.location || '';
-    form.links = task.links ? [...task.links] : [];
+    // 深拷贝links数组，确保可以独立编辑
+    form.links = task.links ? JSON.parse(JSON.stringify(task.links)) : [];
     form.typeId = task.typeId || 'general';
-    form.attachment = task.attachment || null;
+    // 深拷贝attachment，保留id用于后端识别
+    form.attachment = task.attachment ? { ...task.attachment } : null;
+  } else {
+    // 创建模式：重置表单
+    resetForm();
   }
 }, { immediate: true });
 
@@ -252,11 +275,22 @@ const handleFileChange = (e) => {
 };
 
 const clearFile = () => {
-  form.attachment = null;
+  // 标记为删除（如果是已有附件）
+  if (form.attachment && form.attachment.id) {
+    form.attachment = { id: form.attachment.id, deleted: true };
+  } else {
+    form.attachment = null;
+  }
+  // 清除文件输入
   if (fileInput.value) {
     fileInput.value.value = '';
   }
 };
+
+// 检查是否有有效的附件显示
+const hasValidAttachment = computed(() => {
+  return form.attachment && !form.attachment.deleted;
+});
 
 const addLink = () => {
   if (!newLink.value.trim()) return;
@@ -276,6 +310,13 @@ const handleAISubmit = () => {
 
 const handleSave = () => {
   if (!form.title.trim()) return;
+  
+  // 处理附件：如果被标记为删除，传 null；否则传实际值
+  let attachmentToSave = null;
+  if (form.attachment && !form.attachment.deleted) {
+    attachmentToSave = form.attachment;
+  }
+  
   emit('save', {
     id: props.editTask?.id,
     title: form.title.trim(),
@@ -284,9 +325,11 @@ const handleSave = () => {
     startTime: form.isAllDay ? null : form.startTime,
     endTime: form.isAllDay ? null : form.endTime,
     location: form.location,
-    links: form.links,
+    links: [...form.links], // 确保传递副本
     typeId: form.typeId,
-    attachment: form.attachment
+    attachment: attachmentToSave,
+    // 如果附件被删除，传递删除标记
+    deleteAttachment: form.attachment?.deleted ? form.attachment.id : null
   });
   emit('close');
 };
