@@ -3,6 +3,14 @@
     <div class="carousel-header">
       <Sparkles :size="16" />
       <span>Reminder</span>
+      <button 
+        class="refresh-btn" 
+        @click="handleRefresh" 
+        :class="{ refreshing: isRefreshing }"
+        :disabled="isRefreshing"
+      >
+        <RefreshCw :size="14" :class="{ spinning: isRefreshing }" />
+      </button>
     </div>
     
     <div class="carousel-wrapper">
@@ -47,7 +55,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { Sparkles, Cloud, Navigation, CalendarHeart } from 'lucide-vue-next';
+import { Sparkles, Cloud, Navigation, CalendarHeart, RefreshCw } from 'lucide-vue-next';
 
 const props = defineProps({
   reminders: {
@@ -56,9 +64,33 @@ const props = defineProps({
   }
 });
 
+const emit = defineEmits(['refresh']);
+
 const currentIndex = ref(0);
+const isRefreshing = ref(false);
 let autoPlayTimer = null;
 let touchStartX = 0;
+
+const handleRefresh = async () => {
+  if (isRefreshing.value) return;
+  isRefreshing.value = true;
+  
+  // 停止自动播放
+  stopAutoPlay();
+  
+  // 触发刷新事件，让父组件处理
+  emit('refresh');
+  
+  // 等待足够的时间让父组件完成刷新（包括API超时时间）
+  // 最少显示动画1.5秒，给用户视觉反馈
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  
+  isRefreshing.value = false;
+  currentIndex.value = 0;
+  
+  // 重新开始自动播放
+  startAutoPlay();
+};
 
 const startAutoPlay = () => {
   if (props.reminders.length <= 1) return;
@@ -112,6 +144,40 @@ onUnmounted(stopAutoPlay);
   color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
+}
+
+.refresh-btn {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+}
+
+.refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.refresh-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .carousel-wrapper {

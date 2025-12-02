@@ -71,7 +71,7 @@
 
           <!-- Reminder Section -->
           <section class="reminder-section">
-            <ReminderCarousel :reminders="reminders" />
+            <ReminderCarousel :reminders="reminders" @refresh="handleRefreshReminders" />
           </section>
         </div>
       </main>
@@ -120,7 +120,7 @@ import CreateCalendarTypeModal from './components/modals/CreateCalendarTypeModal
 import CreateEventModal from './components/modals/CreateEventModal.vue';
 import SettingsModal from './components/modals/SettingsModal.vue';
 import LoginModal from './components/modals/LoginModal.vue';
-import { authAPI, userAPI, calendarTypesAPI, eventsAPI, filesAPI, setAccessToken, getAccessToken } from './services/api.js';
+import { authAPI, userAPI, calendarTypesAPI, eventsAPI, filesAPI, agentAPI, setAccessToken, getAccessToken } from './services/api.js';
 import './assets/main.css';
 
 // ==================== STATE ====================
@@ -179,7 +179,6 @@ const transformEventFromBackend = (event) => ({
   startTime: event.start_time,
   endTime: event.end_time,
   location: event.location || '',
-  description: event.description || '',
   typeId: event.type_id,
   color: event.color,
   completed: event.completed,
@@ -196,7 +195,6 @@ const transformEventToBackend = (event) => ({
   start_time: event.startTime || null,
   end_time: event.endTime || null,
   location: event.location || '',
-  description: event.description || '',
   type_id: event.typeId,
   links: event.links || [],
   attachment_id: event.attachmentId || null
@@ -559,28 +557,92 @@ const handleSaveEvent = async (eventData) => {
 };
 
 const handleAITaskSubmit = async (text) => {
-  // AI相关暂不实现，直接创建一个普通任务
-  const type = calendarTypes.value.find(t => t.id === 'general');
-  const eventData = {
-    title: text,
-    date: format(currentDate.value, 'yyyy-MM-dd'),
-    isAllDay: true,
-    typeId: 'general'
-  };
-  
+  // 调用Agent解析任务并直接创建到今天
   try {
-    const res = await eventsAPI.create(transformEventToBackend(eventData));
-    if (res.success) {
-      tasks.value.push(transformEventFromBackend(res.data));
+    // 发送自然语言到Agent解析接口，该接口会直接创建事件
+    const res = await agentAPI.parseTask({ user_input: text });
+    if (res.success && res.data.event) {
+      // 将创建的事件添加到任务列表
+      tasks.value.push(transformEventFromBackend(res.data.event));
+      // 跳转到今天以显示新创建的任务
+      currentDate.value = new Date();
     }
   } catch (err) {
-    console.error('Failed to create task:', err);
+    console.error('AI Task creation failed:', err);
+    // 如果AI解析失败，回退到直接创建普通任务
+    const eventData = {
+      title: text,
+      date: format(new Date(), 'yyyy-MM-dd'), // 今天
+      isAllDay: true,
+      typeId: 'general'
+    };
+    
+    try {
+      const res = await eventsAPI.create(transformEventToBackend(eventData));
+      if (res.success) {
+        tasks.value.push(transformEventFromBackend(res.data));
+        currentDate.value = new Date();
+      }
+    } catch (e) {
+      console.error('Failed to create task:', e);
+    }
   }
 };
 
-const handleEventAISubmit = (text) => {
-  console.log('Event AI Input:', text);
-  // AI相关暂不实现
+const handleEventAISubmit = async (text, formRef) => {
+  // 调用Agent解析事件
+  try {
+    const res = await agentAPI.parseEvent({ user_input: text });
+    if (res.success && res.data.parsed) {
+      // 返回解析结果给表单
+      return res.data.parsed;
+    }
+  } catch (err) {
+    console.error('AI Event parse failed:', err);
+  }
+  return null;
+};
+
+// AI Reminder 刷新
+const handleRefreshReminders = async () => {
+  // 设置超时时间（10秒）
+  const TIMEOUT_MS = 10000;
+  
+  try {
+    // 1. 获取上下文数据
+    const contextRes = await Promise.race([
+      agentAPI.getReminderContext(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
+    ]);
+    
+    if (!contextRes.success) {
+      console.error('Failed to get reminder context');
+      // 失败时保持之前的数据，不做任何更改
+      return;
+    }
+    
+    // 2. 调用生成提醒接口（这里需要外部Agent处理）
+    const remindersRes = await Promise.race([
+      agentAPI.generateReminders(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
+    ]);
+    
+    if (remindersRes.success && remindersRes.data && remindersRes.data.length > 0) {
+      // 只有成功且有数据时才更新提醒
+      reminders.value = remindersRes.data.map(r => ({
+        id: r.id,
+        type: r.type,
+        title: r.title,
+        subtitle: r.subtitle,
+        bgColor: r.bg_color,
+        iconBg: r.icon_bg
+      }));
+    }
+    // 如果返回空数组或失败，保持之前的数据不变
+  } catch (err) {
+    // 超时或其他错误，保持之前的数据不变
+    console.error('Failed to refresh reminders:', err);
+  }
 };
 
 const handleSaveSettings = async (settings) => {

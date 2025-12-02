@@ -294,7 +294,7 @@ export const filesAPI = {
 
 export const remindersAPI = {
   /**
-   * 获取提醒
+   * 获取提醒（静态数据）
    */
   getAll: (date = null) => {
     const queryString = date ? `?date=${date}` : '';
@@ -313,6 +313,70 @@ export const commuteAPI = {
   },
 };
 
+// ==================== AGENT API ====================
+
+export const agentAPI = {
+  /**
+   * 获取AI Reminder的上下文数据
+   * 包含：用户位置信息、家庭/学校地址、未来10天行程
+   */
+  getReminderContext: () => request('/agent/reminder-context'),
+
+  /**
+   * AI解析任务输入（Add a Task for Today）
+   * @param {string} userInput - 用户自然语言输入
+   */
+  parseTask: (userInput) => request('/agent/parse-task', {
+    method: 'POST',
+    body: JSON.stringify({ user_input: userInput }),
+  }),
+
+  /**
+   * AI解析日历类型输入（Create Calendar Type）
+   * @param {string} userInput - 用户自然语言输入
+   */
+  parseCalendarType: (userInput) => request('/agent/parse-calendar-type', {
+    method: 'POST',
+    body: JSON.stringify({ user_input: userInput }),
+  }),
+
+  /**
+   * AI解析事件输入（Create Event）
+   * @param {string} userInput - 用户自然语言输入
+   */
+  parseEvent: (userInput) => request('/agent/parse-event', {
+    method: 'POST',
+    body: JSON.stringify({ user_input: userInput }),
+  }),
+
+  /**
+   * AI生成智能提醒（AI Reminder）
+   * 由前端先获取reminder-context，再发送给Agent处理
+   */
+  generateReminders: () => request('/agent/generate-reminders', {
+    method: 'POST',
+  }),
+
+  /**
+   * 执行Agent操作
+   */
+  executeAction: (action, payload, reason = '') => request('/agent/action', {
+    method: 'POST',
+    body: JSON.stringify({ action, payload, reason }),
+  }),
+
+  /**
+   * 获取Agent信息
+   */
+  getInfo: (startDate = null, endDate = null) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    const queryString = params.toString();
+    return request(`/agent/info${queryString ? '?' + queryString : ''}`);
+  },
+};
+
 // 导出所有API
 export default {
   auth: authAPI,
@@ -323,6 +387,7 @@ export default {
   files: filesAPI,
   reminders: remindersAPI,
   commute: commuteAPI,
+  agent: agentAPI,
   setAccessToken,
   getAccessToken,
 };

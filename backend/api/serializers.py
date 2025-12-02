@@ -46,8 +46,28 @@ class CalendarTypeSerializer(serializers.ModelSerializer):
 
 class CalendarTypeCreateSerializer(serializers.Serializer):
     """创建日历类型的序列化器"""
+    # 前端固定的6种可用颜色
+    VALID_COLORS = ['#F59E0B', '#EC4899', '#3B82F6', '#22C55E', '#A855F7', '#EF4444']
+    
     name = serializers.CharField(max_length=100)
-    color = serializers.CharField(max_length=20)
+    color = serializers.CharField(max_length=20)  # 必填字段
+    
+    def validate_color(self, value):
+        """验证颜色必须是6种固定颜色之一"""
+        # 转换为大写进行比较（颜色代码不区分大小写）
+        normalized = value.upper()
+        valid_colors_upper = [c.upper() for c in self.VALID_COLORS]
+        if normalized not in valid_colors_upper:
+            raise serializers.ValidationError(
+                f"Invalid color. Must be one of: {', '.join(self.VALID_COLORS)}"
+            )
+        # 返回标准格式（大写）
+        return normalized
+    
+    @classmethod
+    def get_valid_colors(cls):
+        """获取有效颜色列表"""
+        return cls.VALID_COLORS
 
 
 class UploadedFileSerializer(serializers.ModelSerializer):
@@ -86,7 +106,7 @@ class EventSerializer(serializers.ModelSerializer):
         model = Event
         fields = [
             'id', 'title', 'date', 'is_all_day', 'start_time', 'end_time',
-            'location', 'description', 'type_id', 'color', 'completed', 'completed_at',
+            'location', 'type_id', 'color', 'completed', 'completed_at',
             'expanded', 'links', 'attachment', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'color', 'completed_at', 'created_at', 'updated_at']
@@ -108,7 +128,6 @@ class EventCreateSerializer(serializers.Serializer):
     start_time = serializers.TimeField(required=False, allow_null=True)
     end_time = serializers.TimeField(required=False, allow_null=True)
     location = serializers.CharField(required=False, allow_blank=True, default='')
-    description = serializers.CharField(required=False, allow_blank=True, default='')
     type_id = serializers.CharField(max_length=100)
     # 使用CharField而不是URLField，允许更灵活的链接格式
     links = serializers.ListField(child=serializers.CharField(max_length=2000), required=False, default=list)
@@ -123,10 +142,10 @@ class EventUpdateSerializer(serializers.Serializer):
     start_time = serializers.TimeField(required=False, allow_null=True)
     end_time = serializers.TimeField(required=False, allow_null=True)
     location = serializers.CharField(required=False, allow_blank=True)
-    description = serializers.CharField(required=False, allow_blank=True)
     type_id = serializers.CharField(max_length=100, required=False)
     completed = serializers.BooleanField(required=False)
     expanded = serializers.BooleanField(required=False)
+    attachment_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class EventCompleteSerializer(serializers.Serializer):

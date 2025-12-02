@@ -7,12 +7,14 @@
     </button>
     
     <div v-if="isExpanded" class="input-panel">
-      <input 
+      <textarea 
+        ref="inputTextarea"
         v-model="inputText"
-        type="text" 
         placeholder="Type/Speak anything you should do today...."
-        @keyup.enter="handleSubmit"
-      />
+        rows="1"
+        @keydown.enter.exact.prevent="handleSubmit"
+        @input="autoResizeTextarea"
+      ></textarea>
       <div class="input-actions">
         <button class="mic-btn" @click="toggleRecording" :class="{ recording: isRecording }">
           <Mic :size="18" />
@@ -31,9 +33,18 @@ import { Sparkles, Mic, ArrowUp } from 'lucide-vue-next';
 
 const emit = defineEmits(['submit']);
 
+const inputTextarea = ref(null);
 const isExpanded = ref(false);
 const inputText = ref('');
 const isRecording = ref(false);
+
+// 自动调整textarea高度
+const autoResizeTextarea = () => {
+  if (inputTextarea.value) {
+    inputTextarea.value.style.height = 'auto';
+    inputTextarea.value.style.height = Math.min(inputTextarea.value.scrollHeight, 100) + 'px';
+  }
+};
 
 const toggleRecording = () => {
   isRecording.value = !isRecording.value;
@@ -44,6 +55,10 @@ const handleSubmit = () => {
   emit('submit', inputText.value.trim());
   inputText.value = '';
   isExpanded.value = false;
+  // 重置高度
+  if (inputTextarea.value) {
+    inputTextarea.value.style.height = 'auto';
+  }
 };
 </script>
 
@@ -81,7 +96,7 @@ const handleSubmit = () => {
 
 .input-panel {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   background: #FFFBEB;
   border-radius: 12px;
@@ -90,23 +105,30 @@ const handleSubmit = () => {
   max-width: 500px;
 }
 
-.input-panel input {
+.input-panel textarea {
   flex: 1;
   border: none;
   background: transparent;
   outline: none;
   font-size: 14px;
   color: var(--text-primary);
+  resize: none;
+  min-height: 20px;
+  max-height: 100px;
+  line-height: 1.4;
+  font-family: inherit;
+  overflow-y: auto;
 }
 
-.input-panel input::placeholder {
+.input-panel textarea::placeholder {
   color: #9CA3AF;
 }
 
 .input-actions {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
+  padding-top: 2px;
 }
 
 .mic-btn, .send-btn {

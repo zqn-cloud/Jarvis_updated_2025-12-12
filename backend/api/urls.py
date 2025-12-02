@@ -37,5 +37,12 @@ urlpatterns = [
     # Agent API - 为AI Agent提供接口
     path('agent/info', views.agent_info, name='agent_info'),
     path('agent/action', views.agent_action, name='agent_action'),
+    
+    # Agent AI Endpoints - 供前端调用，对接外部AI Agent
+    path('agent/reminder-context', views.agent_reminder_context, name='agent_reminder_context'),
+    path('agent/parse-task', views.agent_parse_task, name='agent_parse_task'),
+    path('agent/parse-calendar-type', views.agent_parse_calendar_type, name='agent_parse_calendar_type'),
+    path('agent/parse-event', views.agent_parse_event, name='agent_parse_event'),
+    path('agent/generate-reminders', views.agent_generate_reminders, name='agent_generate_reminders'),
 ]
 

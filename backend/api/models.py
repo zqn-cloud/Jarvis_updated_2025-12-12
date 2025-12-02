@@ -111,7 +111,6 @@ class Event(models.Model):
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
     location = models.TextField(blank=True, default='')
-    description = models.TextField(blank=True, default='')
     
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True)

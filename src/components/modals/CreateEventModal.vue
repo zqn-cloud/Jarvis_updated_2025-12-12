@@ -4,15 +4,18 @@
       <!-- AI Input -->
       <div class="ai-input-row">
         <Sparkles :size="16" class="ai-icon" />
-        <input 
+        <textarea 
+          ref="aiTextarea"
           v-model="aiInput" 
-          type="text" 
           placeholder="chat with ai to create event..." 
           class="ai-input"
-          @keyup.enter="handleAISubmit"
-        />
-        <button class="ai-submit-btn" @click="handleAISubmit" :disabled="!aiInput.trim()">
-          <Send :size="16" />
+          rows="1"
+          @keydown.enter.exact.prevent="handleAISubmit"
+          @input="autoResizeTextarea"
+        ></textarea>
+        <button class="ai-submit-btn" @click="handleAISubmit" :disabled="!aiInput.trim() || isLoading">
+          <Send v-if="!isLoading" :size="16" />
+          <div v-else class="loading-spinner-small"></div>
         </button>
         <button class="close-btn" @click="$emit('close')">
           <X :size="18" />
@@ -168,6 +171,7 @@
 import { ref, reactive, computed, watch } from 'vue';
 import { format } from 'date-fns';
 import { X, Sparkles, Send, Calendar as CalendarIcon, Clock, MapPin, Link as LinkIcon, ChevronDown, Paperclip, Plus } from 'lucide-vue-next';
+import { agentAPI } from '../../services/api.js';
 
 const props = defineProps({
   calendarTypes: {
@@ -187,9 +191,19 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save', 'ai-submit']);
 
 const fileInput = ref(null);
+const aiTextarea = ref(null);
 const aiInput = ref('');
 const showTypeDropdown = ref(false);
 const newLink = ref('');
+const isLoading = ref(false);
+
+// 自动调整textarea高度
+const autoResizeTextarea = () => {
+  if (aiTextarea.value) {
+    aiTextarea.value.style.height = 'auto';
+    aiTextarea.value.style.height = Math.min(aiTextarea.value.scrollHeight, 120) + 'px';
+  }
+};
 
 const formatDateForInput = (date) => {
   return format(date, 'yyyy-MM-dd');
@@ -226,6 +240,11 @@ const resetForm = () => {
 
 // If editing, populate form; otherwise reset
 watch(() => props.editTask, (task) => {
+  // 清除file input的值，确保可以重新选择相同文件
+  if (fileInput.value) {
+    fileInput.value.value = '';
+  }
+  
   if (task) {
     // 编辑模式：填充表单数据
     form.title = task.title || '';
@@ -237,7 +256,7 @@ watch(() => props.editTask, (task) => {
     // 深拷贝links数组，确保可以独立编辑
     form.links = task.links ? JSON.parse(JSON.stringify(task.links)) : [];
     form.typeId = task.typeId || 'general';
-    // 深拷贝attachment，保留id用于后端识别
+    // 深拷贝attachment，保留id和name用于后端识别和前端显示
     form.attachment = task.attachment ? { ...task.attachment } : null;
   } else {
     // 创建模式：重置表单
@@ -266,10 +285,15 @@ const selectType = (type) => {
 const handleFileChange = (e) => {
   const file = e.target.files[0];
   if (file) {
+    // 如果已有附件（有id），先标记为待删除
+    const oldAttachmentId = form.attachment?.id;
+    
     form.attachment = {
       name: file.name,
       file: file,
-      url: URL.createObjectURL(file)
+      url: URL.createObjectURL(file),
+      // 保存旧附件ID用于删除
+      replaceOldId: oldAttachmentId || null
     };
   }
 };
@@ -303,9 +327,54 @@ const removeLink = (index) => {
   form.links.splice(index, 1);
 };
 
-const handleAISubmit = () => {
-  if (!aiInput.value.trim()) return;
-  emit('ai-submit', aiInput.value.trim());
+const handleAISubmit = async () => {
+  if (!aiInput.value.trim() || isLoading.value) return;
+  
+  isLoading.value = true;
+  try {
+    // 调用Agent解析事件
+    const res = await agentAPI.parseEvent({ user_input: aiInput.value.trim() });
+    if (res.success && res.data.parsed) {
+      const parsed = res.data.parsed;
+      
+      // 填充表单数据
+      if (parsed.title) {
+        form.title = parsed.title;
+      }
+      if (parsed.date) {
+        form.date = parsed.date;
+      }
+      if (parsed.is_all_day !== undefined) {
+        form.isAllDay = parsed.is_all_day;
+      }
+      if (parsed.start_time) {
+        form.startTime = parsed.start_time;
+      }
+      if (parsed.end_time) {
+        form.endTime = parsed.end_time;
+      }
+      if (parsed.location) {
+        form.location = parsed.location;
+      }
+      if (parsed.type_id) {
+        // 验证类型是否存在
+        const typeExists = props.calendarTypes.some(t => t.id === parsed.type_id);
+        if (typeExists) {
+          form.typeId = parsed.type_id;
+        }
+      }
+      
+      // 清空AI输入并重置高度
+      aiInput.value = '';
+      if (aiTextarea.value) {
+        aiTextarea.value.style.height = 'auto';
+      }
+    }
+  } catch (err) {
+    console.error('AI parse failed:', err);
+  } finally {
+    isLoading.value = false;
+  }
 };
 
 const handleSave = () => {
@@ -313,8 +382,23 @@ const handleSave = () => {
   
   // 处理附件：如果被标记为删除，传 null；否则传实际值
   let attachmentToSave = null;
-  if (form.attachment && !form.attachment.deleted) {
-    attachmentToSave = form.attachment;
+  let attachmentToDelete = null;
+  
+  if (form.attachment) {
+    if (form.attachment.deleted) {
+      // 用户点击了清除按钮
+      attachmentToDelete = form.attachment.id;
+    } else if (form.attachment.file) {
+      // 有新文件要上传
+      attachmentToSave = form.attachment;
+      // 如果是替换旧附件，标记旧附件待删除
+      if (form.attachment.replaceOldId) {
+        attachmentToDelete = form.attachment.replaceOldId;
+      }
+    } else if (form.attachment.id) {
+      // 保留原有附件
+      attachmentToSave = form.attachment;
+    }
   }
   
   emit('save', {
@@ -328,8 +412,8 @@ const handleSave = () => {
     links: [...form.links], // 确保传递副本
     typeId: form.typeId,
     attachment: attachmentToSave,
-    // 如果附件被删除，传递删除标记
-    deleteAttachment: form.attachment?.deleted ? form.attachment.id : null
+    // 需要删除的附件ID
+    deleteAttachment: attachmentToDelete
   });
   emit('close');
 };
@@ -358,12 +442,17 @@ const handleSave = () => {
 
 .ai-input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   border: 2px solid #6366F1;
-  border-radius: 24px;
-  padding: 10px 16px;
+  border-radius: 16px;
+  padding: 12px 16px;
   margin-bottom: 24px;
+  min-height: 44px;
+}
+
+.ai-input-row .ai-icon {
+  margin-top: 2px;
 }
 
 .ai-icon {
@@ -377,6 +466,12 @@ const handleSave = () => {
   outline: none;
   font-size: 14px;
   color: var(--text-primary);
+  resize: none;
+  min-height: 20px;
+  max-height: 120px;
+  line-height: 1.4;
+  font-family: inherit;
+  overflow-y: auto;
 }
 
 .ai-input::placeholder {
@@ -394,6 +489,7 @@ const handleSave = () => {
   justify-content: center;
   flex-shrink: 0;
   transition: all 0.2s;
+  margin-top: 2px;
 }
 
 .ai-submit-btn:hover:not(:disabled) {
@@ -409,6 +505,7 @@ const handleSave = () => {
   color: #6B7280;
   padding: 4px;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .close-btn:hover {
@@ -745,5 +842,18 @@ const handleSave = () => {
 .save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.loading-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

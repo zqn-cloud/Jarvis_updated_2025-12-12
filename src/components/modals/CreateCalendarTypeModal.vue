@@ -4,15 +4,18 @@
       <!-- AI Input -->
       <div class="ai-input-row">
         <Sparkles :size="16" class="ai-icon" />
-        <input 
+        <textarea 
+          ref="aiTextarea"
           v-model="aiInput"
-          type="text" 
           placeholder="Describe the calendar type..." 
           class="ai-input"
-          @keyup.enter="handleAISubmit" 
-        />
-        <button class="ai-submit-btn" @click="handleAISubmit" :disabled="!aiInput.trim()">
-          <Send :size="16" />
+          rows="1"
+          @keydown.enter.exact.prevent="handleAISubmit"
+          @input="autoResizeTextarea"
+        ></textarea>
+        <button class="ai-submit-btn" @click="handleAISubmit" :disabled="!aiInput.trim() || isLoading">
+          <Send v-if="!isLoading" :size="16" />
+          <div v-else class="loading-spinner-small"></div>
         </button>
         <button class="close-btn" @click="$emit('close')">
           <X :size="18" />
@@ -66,12 +69,23 @@
 <script setup>
 import { ref } from 'vue';
 import { X, Sparkles, ChevronDown, Send } from 'lucide-vue-next';
+import { agentAPI } from '../../services/api.js';
 
 const emit = defineEmits(['close', 'save', 'ai-submit']);
 
+const aiTextarea = ref(null);
 const typeName = ref('');
 const aiInput = ref('');
 const showDropdown = ref(false);
+const isLoading = ref(false);
+
+// 自动调整textarea高度
+const autoResizeTextarea = () => {
+  if (aiTextarea.value) {
+    aiTextarea.value.style.height = 'auto';
+    aiTextarea.value.style.height = Math.min(aiTextarea.value.scrollHeight, 120) + 'px';
+  }
+};
 
 const colorOptions = [
   { name: 'Amber', value: '#F59E0B' },
@@ -89,10 +103,41 @@ const selectColor = (color) => {
   showDropdown.value = false;
 };
 
-const handleAISubmit = () => {
-  if (!aiInput.value.trim()) return;
-  // TODO: Call AI API to parse and fill form
-  emit('ai-submit', aiInput.value.trim());
+const handleAISubmit = async () => {
+  if (!aiInput.value.trim() || isLoading.value) return;
+  
+  isLoading.value = true;
+  try {
+    // 调用Agent解析日历类型
+    const res = await agentAPI.parseCalendarType({ user_input: aiInput.value.trim() });
+    if (res.success && res.data.parsed) {
+      const parsed = res.data.parsed;
+      
+      // 填入名称
+      if (parsed.name) {
+        typeName.value = parsed.name;
+      }
+      
+      // 匹配颜色（只接受6种固定颜色）
+      if (parsed.color) {
+        const matchedColor = colorOptions.find(c => c.value.toLowerCase() === parsed.color.toLowerCase());
+        if (matchedColor) {
+          selectedColor.value = matchedColor;
+        }
+        // 如果颜色不在列表中，保持当前选中的颜色，不接受自定义颜色
+      }
+      
+      // 清空AI输入并重置高度
+      aiInput.value = '';
+      if (aiTextarea.value) {
+        aiTextarea.value.style.height = 'auto';
+      }
+    }
+  } catch (err) {
+    console.error('AI parse failed:', err);
+  } finally {
+    isLoading.value = false;
+  }
 };
 
 const handleSave = () => {
@@ -126,17 +171,19 @@ const handleSave = () => {
 
 .ai-input-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   border: 1px solid #E5E7EB;
-  border-radius: 24px;
-  padding: 10px 16px;
+  border-radius: 16px;
+  padding: 12px 16px;
   margin-bottom: 24px;
+  min-height: 44px;
 }
 
 .ai-icon {
   color: #6B7280;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .ai-input {
@@ -145,6 +192,12 @@ const handleSave = () => {
   outline: none;
   font-size: 14px;
   color: var(--text-primary);
+  resize: none;
+  min-height: 20px;
+  max-height: 120px;
+  line-height: 1.4;
+  font-family: inherit;
+  overflow-y: auto;
 }
 
 .ai-input::placeholder {
@@ -162,6 +215,7 @@ const handleSave = () => {
   justify-content: center;
   flex-shrink: 0;
   transition: all 0.2s;
+  margin-top: 2px;
 }
 
 .ai-submit-btn:hover:not(:disabled) {
@@ -177,6 +231,7 @@ const handleSave = () => {
   color: #6B7280;
   padding: 4px;
   flex-shrink: 0;
+  margin-top: 2px;
 }
 
 .close-btn:hover {
@@ -285,5 +340,18 @@ const handleSave = () => {
 .save-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.loading-spinner-small {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

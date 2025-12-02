@@ -362,7 +362,6 @@ def events_list(request):
                 start_time=data.get('start_time'),
                 end_time=data.get('end_time'),
                 location=data.get('location', ''),
-                description=data.get('description', ''),
                 attachment=attachment
             )
             
@@ -411,8 +410,6 @@ def event_detail(request, event_id):
             event.end_time = data['end_time']
         if 'location' in data:
             event.location = data['location']
-        if 'description' in data:
-            event.description = data['description']
         if 'completed' in data:
             event.completed = data['completed']
             if data['completed']:
@@ -429,7 +426,24 @@ def event_detail(request, event_id):
             except CalendarType.DoesNotExist:
                 pass
         
+        # 处理附件更新
+        if 'attachment_id' in data:
+            new_attachment_id = data['attachment_id']
+            if new_attachment_id is None:
+                # 清除附件
+                event.attachment = None
+            else:
+                # 设置新附件
+                try:
+                    new_attachment = UploadedFile.objects.get(id=new_attachment_id, user=user)
+                    event.attachment = new_attachment
+                except UploadedFile.DoesNotExist:
+                    pass
+        
         event.save()
+        
+        # 重新加载以获取最新的attachment数据
+        event.refresh_from_db()
         
         return make_response(
             EventSerializer(event, context={'request': request}).data,
@@ -736,7 +750,6 @@ def agent_info(request):
             'start_time': e.start_time.strftime('%H:%M') if e.start_time else None,
             'end_time': e.end_time.strftime('%H:%M') if e.end_time else None,
             'location': e.location,
-            'description': e.description,
             'type_id': e.calendar_type.type_id if e.calendar_type else 'general',
             'color': e.calendar_type.color if e.calendar_type else '#6B7280',
             'completed': e.completed,
@@ -820,8 +833,7 @@ def agent_action(request):
                 is_all_day=payload.get('is_all_day', True),
                 start_time=payload.get('start_time'),
                 end_time=payload.get('end_time'),
-                location=payload.get('location', ''),
-                description=payload.get('description', '')
+                location=payload.get('location', '')
             )
             
             # 添加链接
@@ -848,8 +860,6 @@ def agent_action(request):
                 event.end_time = payload['end_time']
             if 'location' in payload:
                 event.location = payload['location']
-            if 'description' in payload:
-                event.description = payload['description']
             
             event.save()
             result['status'] = 'success'
@@ -859,6 +869,19 @@ def agent_action(request):
             event_id = payload.get('event_id')
             event = Event.objects.get(id=event_id, user=user)
             title = event.title
+            
+            # 删除关联的附件（和event_detail一样的处理）
+            if event.attachment:
+                attachment = event.attachment
+                if attachment.file:
+                    try:
+                        if os.path.isfile(attachment.file.path):
+                            os.remove(attachment.file.path)
+                    except Exception as e:
+                        print(f"Failed to delete file: {e}")
+                attachment.delete()
+            
+            # EventLink会自动通过CASCADE删除
             event.delete()
             result['status'] = 'success'
             result['message'] = f"Event '{title}' deleted successfully"
@@ -875,7 +898,27 @@ def agent_action(request):
         
         elif action == 'create_calendar_type':
             name = payload.get('name')
-            color = payload.get('color', '#6B7280')
+            if not name:
+                result['status'] = 'error'
+                result['message'] = 'Name is required'
+                return make_response(result)
+            
+            # 前端固定的6种可用颜色
+            VALID_COLORS = ['#F59E0B', '#EC4899', '#3B82F6', '#22C55E', '#A855F7', '#EF4444']
+            color = payload.get('color')
+            
+            if not color:
+                result['status'] = 'error'
+                result['message'] = f"Color is required. Must be one of: {', '.join(VALID_COLORS)}"
+                return make_response(result)
+            
+            # 验证颜色是否有效
+            color_upper = color.upper()
+            valid_colors_upper = [c.upper() for c in VALID_COLORS]
+            if color_upper not in valid_colors_upper:
+                result['status'] = 'error'
+                result['message'] = f"Invalid color '{color}'. Must be one of: {', '.join(VALID_COLORS)}"
+                return make_response(result)
             
             type_id = name.lower().replace(' ', '_') + '_' + str(uuid.uuid4())[:8]
             
@@ -883,7 +926,7 @@ def agent_action(request):
                 user=user,
                 type_id=type_id,
                 name=name,
-                color=color,
+                color=color_upper,  # 使用标准格式
                 is_deletable=True
             )
             
@@ -903,3 +946,394 @@ def agent_action(request):
         result['message'] = str(e)
     
     return make_response(result)
+
+
+# ==================== AGENT AI ENDPOINTS ====================
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def agent_reminder_context(request):
+    """
+    为AI Reminder提供上下文数据
+    包含：用户位置信息、家庭/学校地址、未来10天行程（不含附件和链接）
+    
+    返回数据供Agent处理，Agent应返回3个提醒卡片
+    """
+    user = request.user
+    
+    # 获取用户当前位置
+    current_location = None
+    latest_location = user.locations.first()
+    if latest_location:
+        current_location = {
+            'latitude': latest_location.latitude,
+            'longitude': latest_location.longitude,
+            'accuracy': latest_location.accuracy,
+            'timestamp': latest_location.timestamp.isoformat()
+        }
+    
+    # 获取未来10天的事件（不含附件和链接）
+    today = date.today()
+    end_date = today + timedelta(days=10)
+    
+    events = Event.objects.filter(
+        user=user,
+        date__gte=today,
+        date__lte=end_date
+    ).select_related('calendar_type').order_by('date', 'start_time')
+    
+    events_data = [
+        {
+            'id': str(e.id),
+            'title': e.title,
+            'date': e.date.isoformat(),
+            'is_all_day': e.is_all_day,
+            'start_time': e.start_time.strftime('%H:%M') if e.start_time else None,
+            'end_time': e.end_time.strftime('%H:%M') if e.end_time else None,
+            'location': e.location,
+            'type_id': e.calendar_type.type_id if e.calendar_type else 'general',
+            'type_name': e.calendar_type.name if e.calendar_type else 'General',
+            'color': e.calendar_type.color if e.calendar_type else '#6B7280',
+            'completed': e.completed
+        }
+        for e in events
+    ]
+    
+    return make_response({
+        'user': {
+            'account_id': user.account_id,
+            'home_address': user.home_address or '',
+            'school_address': user.school_address or ''
+        },
+        'current_location': current_location,
+        'events': events_data,
+        'date_range': {
+            'start': today.isoformat(),
+            'end': end_date.isoformat()
+        },
+        'server_time': timezone.now().isoformat()
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def agent_parse_task(request):
+    """
+    Add a Task for Today 功能
+    
+    两种模式:
+    1. 发送 user_input: 返回上下文信息供Agent解析
+    2. 发送解析后的数据(title等): 创建事件
+    
+    模式1 - 前端发送:
+    { "user_input": "下午三点开会" }
+    
+    后端返回上下文（供Agent使用）:
+    {
+        "user_input": "下午三点开会",
+        "available_types": [{"id": "general", "name": "General", "color": "#6B7280"}, ...],
+        "date": "2025-12-02",
+        "message": "请Agent解析后返回title, type_id等字段"
+    }
+    
+    模式2 - Agent解析后发送:
+    {
+        "title": "开会",
+        "type_id": "general",
+        "is_all_day": false,
+        "start_time": "15:00",
+        "end_time": "16:00",
+        "location": ""
+    }
+    
+    后端创建事件并返回
+    """
+    user = request.user
+    data = request.data
+    
+    # 获取用户的日历类型列表（两种模式都需要）
+    calendar_types = CalendarType.objects.filter(user=user)
+    available_types = [
+        {'id': t.type_id, 'name': t.name, 'color': t.color} 
+        for t in calendar_types
+    ]
+    
+    # 模式1: 如果收到user_input，返回上下文供Agent解析
+    if 'user_input' in data and 'title' not in data:
+        return make_response({
+            'user_input': data['user_input'],
+            'available_types': available_types,
+            'default_type_id': 'general',
+            'date': date.today().isoformat(),  # 日期锁定为今天
+            'message': 'Agent请从available_types中选择type_id，返回title, type_id, is_all_day, start_time, end_time, location'
+        })
+    
+    # 模式2: 接收Agent解析后的数据，创建事件
+    title = data.get('title')
+    if not title:
+        return make_error_response('VALIDATION_ERROR', 'Title is required. 如果发送user_input，请勿同时发送title。')
+    
+    # 获取日历类型（必须是用户已有的类型）
+    type_id = data.get('type_id', 'general')
+    calendar_type = CalendarType.objects.filter(user=user, type_id=type_id).first()
+    if not calendar_type:
+        calendar_type = CalendarType.objects.filter(user=user, type_id='general').first()
+    
+    # 创建事件（日期锁定为今天）
+    event = Event.objects.create(
+        user=user,
+        calendar_type=calendar_type,
+        title=title,
+        date=date.today(),  # 锁定为今天
+        is_all_day=data.get('is_all_day', True),
+        start_time=data.get('start_time'),
+        end_time=data.get('end_time'),
+        location=data.get('location', '')
+    )
+    
+    # 返回创建的事件数据（和EventSerializer字段对齐）
+    return make_response({
+        'event': {
+            'id': str(event.id),
+            'title': event.title,
+            'date': event.date.isoformat(),
+            'is_all_day': event.is_all_day,
+            'start_time': event.start_time.strftime('%H:%M') if event.start_time else None,
+            'end_time': event.end_time.strftime('%H:%M') if event.end_time else None,
+            'location': event.location,
+            'type_id': calendar_type.type_id,
+            'color': calendar_type.color,
+            'completed': event.completed,
+            'expanded': event.expanded,
+            'links': [],  # 新创建的事件没有链接
+            'attachment': None  # 新创建的事件没有附件
+        },
+        'available_types': available_types,  # 始终返回可用类型
+        'message': f"Task '{title}' created for today"
+    }, status_code=201)
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def agent_parse_calendar_type(request):
+    """
+    Create Calendar Type 功能
+    
+    两种模式:
+    1. 发送 user_input: 返回上下文信息（可用颜色）供Agent解析
+    2. 发送解析后的数据(name, color): 验证并返回结果供前端填入表单
+    
+    模式1 - 前端发送:
+    { "user_input": "创建一个粉色的健身类型" }
+    
+    后端返回上下文（供Agent使用）:
+    {
+        "user_input": "创建一个粉色的健身类型",
+        "available_colors": [
+            {"name": "Amber", "value": "#F59E0B"},
+            {"name": "Pink", "value": "#EC4899"},
+            ...
+        ],
+        "message": "请Agent解析后返回name, color字段"
+    }
+    
+    模式2 - Agent解析后发送:
+    { "name": "健身", "color": "#EC4899" }
+    
+    后端验证并返回
+    """
+    data = request.data
+    
+    # 前端固定的6种可用颜色（必须完全匹配）
+    VALID_COLORS = ['#F59E0B', '#EC4899', '#3B82F6', '#22C55E', '#A855F7', '#EF4444']
+    VALID_COLORS_INFO = [
+        {'name': 'Amber', 'value': '#F59E0B'},
+        {'name': 'Pink', 'value': '#EC4899'},
+        {'name': 'Blue', 'value': '#3B82F6'},
+        {'name': 'Green', 'value': '#22C55E'},
+        {'name': 'Purple', 'value': '#A855F7'},
+        {'name': 'Red', 'value': '#EF4444'},
+    ]
+    
+    # 模式1: 如果收到user_input，返回上下文供Agent解析
+    if 'user_input' in data and 'name' not in data:
+        return make_response({
+            'user_input': data['user_input'],
+            'available_colors': VALID_COLORS_INFO,
+            'message': 'Agent请从available_colors中选择一个颜色的value，返回name和color字段。color必须是available_colors中的value之一。'
+        })
+    
+    # 模式2: 接收Agent解析后的数据
+    name = data.get('name')
+    if not name:
+        return make_error_response('VALIDATION_ERROR', 'Name is required. 如果发送user_input，请勿同时发送name。')
+    
+    color = data.get('color')
+    if not color:
+        return make_error_response('VALIDATION_ERROR', f'Color is required. Must be one of: {", ".join(VALID_COLORS)}')
+    
+    # 验证颜色是否有效（不区分大小写）
+    color_upper = color.upper()
+    valid_colors_upper = [c.upper() for c in VALID_COLORS]
+    
+    if color_upper not in valid_colors_upper:
+        return make_error_response(
+            'VALIDATION_ERROR', 
+            f"Invalid color '{color}'. Must be one of: {', '.join(VALID_COLORS)}"
+        )
+    
+    # 返回标准格式的颜色
+    return make_response({
+        'parsed': {
+            'name': name,
+            'color': color_upper
+        },
+        'available_colors': VALID_COLORS_INFO,  # 始终返回可用颜色
+        'message': 'Calendar type parsed successfully'
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def agent_parse_event(request):
+    """
+    Create Event 功能
+    
+    两种模式:
+    1. 发送 user_input: 返回上下文信息（日历类型列表）供Agent解析
+    2. 发送解析后的数据(title等): 返回结果供前端填入表单
+    
+    模式1 - 前端发送:
+    { "user_input": "下周一下午2点在图书馆学习" }
+    
+    后端返回上下文（供Agent使用）:
+    {
+        "user_input": "下周一下午2点在图书馆学习",
+        "available_types": [{"id": "general", "name": "General", "color": "#6B7280"}, ...],
+        "current_date": "2025-12-02",
+        "message": "请Agent解析后返回title, date, type_id等字段"
+    }
+    
+    模式2 - Agent解析后发送:
+    {
+        "title": "图书馆学习",
+        "date": "2025-12-09",
+        "is_all_day": false,
+        "start_time": "14:00",
+        "end_time": "16:00",
+        "location": "图书馆",
+        "type_id": "school"
+    }
+    
+    后端验证并返回供前端填入表单
+    """
+    user = request.user
+    data = request.data
+    
+    # 获取用户的日历类型列表（两种模式都需要）
+    calendar_types = CalendarType.objects.filter(user=user)
+    available_types = [{'id': t.type_id, 'name': t.name, 'color': t.color} for t in calendar_types]
+    
+    # 模式1: 如果收到user_input，返回上下文供Agent解析
+    if 'user_input' in data and 'title' not in data:
+        return make_response({
+            'user_input': data['user_input'],
+            'available_types': available_types,
+            'default_type_id': 'general',
+            'current_date': date.today().isoformat(),
+            'message': 'Agent请从available_types中选择type_id，返回title, date, is_all_day, start_time, end_time, location, type_id'
+        })
+    
+    # 模式2: 接收Agent解析后的数据
+    title = data.get('title')
+    if not title:
+        return make_error_response('VALIDATION_ERROR', 'Title is required. 如果发送user_input，请勿同时发送title。')
+    
+    # 验证类型（必须是用户已有的类型）
+    type_id = data.get('type_id', 'general')
+    if not calendar_types.filter(type_id=type_id).exists():
+        type_id = 'general'
+    
+    return make_response({
+        'parsed': {
+            'title': title,
+            'date': data.get('date', date.today().isoformat()),
+            'is_all_day': data.get('is_all_day', True),
+            'start_time': data.get('start_time'),
+            'end_time': data.get('end_time'),
+            'location': data.get('location', ''),
+            'type_id': type_id
+        },
+        'available_types': available_types,
+        'message': 'Event parsed successfully'
+    })
+
+
+@api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def agent_generate_reminders(request):
+    """
+    接收Agent生成的智能提醒（AI Reminder）
+    
+    Agent只需返回3个提醒卡片的基本信息（颜色由type自动决定）:
+    {
+        "reminders": [
+            {
+                "id": "唯一ID",
+                "type": "weather|commute|important",
+                "title": "提醒标题",
+                "subtitle": "提醒内容"
+            },
+            ...
+        ]
+    }
+    
+    颜色映射（自动根据type设置，Agent无需传递）:
+    - weather: 浅蓝背景 #EAF4FD, 蓝色图标 #60A5FA
+    - commute: 浅绿背景 #E8F5E9, 绿色图标 #4ADE80
+    - important: 浅粉背景 #FCE4EC, 粉色图标 #F472B6
+    
+    注意：前端会先调用 /agent/reminder-context 获取上下文，
+    然后将上下文发送给外部AI Agent处理，
+    Agent处理后调用此接口返回结果
+    
+    如果Agent未配置或请求失败，前端会保持显示之前的提醒数据
+    """
+    data = request.data
+    
+    reminders = data.get('reminders', [])
+    
+    # 颜色完全由type决定，Agent无需传递颜色
+    type_styles = {
+        'weather': {'bg_color': '#EAF4FD', 'icon_bg': '#60A5FA'},
+        'commute': {'bg_color': '#E8F5E9', 'icon_bg': '#4ADE80'},
+        'important': {'bg_color': '#FCE4EC', 'icon_bg': '#F472B6'}
+    }
+    
+    processed_reminders = []
+    for i, reminder in enumerate(reminders[:3]):  # 最多3个
+        reminder_type = reminder.get('type', 'important')
+        # 如果type无效，默认使用important
+        if reminder_type not in type_styles:
+            reminder_type = 'important'
+        
+        styles = type_styles[reminder_type]
+        
+        processed_reminders.append({
+            'id': reminder.get('id', f'rem_{i}'),
+            'type': reminder_type,
+            'title': reminder.get('title', '提醒'),
+            'subtitle': reminder.get('subtitle', ''),
+            'bg_color': styles['bg_color'],
+            'icon_bg': styles['icon_bg']
+        })
+    
+    # 如果没有提供任何提醒，返回空数组（前端会保持之前的数据）
+    # 不再返回默认占位提醒，让前端决定如何处理
+    
+    return make_response(processed_reminders)
