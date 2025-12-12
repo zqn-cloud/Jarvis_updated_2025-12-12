@@ -559,33 +559,41 @@ const handleSaveEvent = async (eventData) => {
 const handleAITaskSubmit = async (text) => {
   // 调用Agent解析任务并直接创建到今天
   try {
-    // 发送自然语言到Agent解析接口，该接口会直接创建事件
-    const res = await agentAPI.parseTask({ user_input: text });
-    if (res.success && res.data.event) {
-      // 将创建的事件添加到任务列表
-      tasks.value.push(transformEventFromBackend(res.data.event));
-      // 跳转到今天以显示新创建的任务
+    // 优先走本地 agent_service（8001），失败再回退到后端直接创建普通任务
+    const AGENT_SERVICE_BASE = import.meta.env.VITE_AGENT_SERVICE_BASE || 'http://localhost:8001';
+    const resp = await fetch(`${AGENT_SERVICE_BASE}/parse-task`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_input: text })
+    });
+    if (!resp.ok) throw new Error(`agent_service ${resp.status}`);
+    const res = await resp.json();
+    // agent_service 直接返回后端 /agent/parse-task 的响应体
+    if (res.event) {
+      tasks.value.push(transformEventFromBackend(res.event));
       currentDate.value = new Date();
+      return;
     }
   } catch (err) {
     console.error('AI Task creation failed:', err);
-    // 如果AI解析失败，回退到直接创建普通任务
-    const eventData = {
-      title: text,
-      date: format(new Date(), 'yyyy-MM-dd'), // 今天
-      isAllDay: true,
-      typeId: 'general'
-    };
-    
-    try {
-      const res = await eventsAPI.create(transformEventToBackend(eventData));
-      if (res.success) {
-        tasks.value.push(transformEventFromBackend(res.data));
-        currentDate.value = new Date();
-      }
-    } catch (e) {
-      console.error('Failed to create task:', e);
+  }
+
+  // 如果AI解析失败，回退到直接创建普通任务
+  const eventData = {
+    title: text,
+    date: format(new Date(), 'yyyy-MM-dd'), // 今天
+    isAllDay: true,
+    typeId: 'general'
+  };
+  
+  try {
+    const res = await eventsAPI.create(transformEventToBackend(eventData));
+    if (res.success) {
+      tasks.value.push(transformEventFromBackend(res.data));
+      currentDate.value = new Date();
     }
+  } catch (e) {
+    console.error('Failed to create task:', e);
   }
 };
 
@@ -607,28 +615,73 @@ const handleEventAISubmit = async (text, formRef) => {
 const handleRefreshReminders = async () => {
   // 设置超时时间（10秒）
   const TIMEOUT_MS = 10000;
+  // 尝试从浏览器获取定位并同步到后端，避免提醒缺少位置
+  const syncBrowserLocation = async () => {
+    if (!('geolocation' in navigator)) return;
+    return new Promise((resolve) => {
+      const geoTimeout = setTimeout(() => resolve(null), 3000);
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          clearTimeout(geoTimeout);
+          const { latitude, longitude, accuracy } = pos.coords;
+          try {
+            await userAPI.updateLocation(latitude, longitude, accuracy || null);
+            currentUser.value.currentLocation = { latitude, longitude, accuracy };
+          } catch (e) {
+            console.warn('updateLocation failed', e);
+          }
+          resolve(null);
+        },
+        () => {
+          clearTimeout(geoTimeout);
+          resolve(null);
+        },
+        { enableHighAccuracy: true, timeout: 2500, maximumAge: 60000 }
+      );
+    });
+  };
   
   try {
-    // 1. 获取上下文数据
+    // 先尝试获取并同步浏览器定位（不阻塞后续流程）
+    await syncBrowserLocation();
+
+    // 优先调用本地 agent_service（已封装上下文获取和生成逻辑）
+    const AGENT_SERVICE_BASE = import.meta.env.VITE_AGENT_SERVICE_BASE || 'http://localhost:8001';
+    const res = await Promise.race([
+      fetch(`${AGENT_SERVICE_BASE}/generate-reminders`, { method: 'POST' }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
+    ]);
+    if (!res.ok) throw new Error(`agent_service ${res.status}`);
+    const body = await res.json();
+    const list = Array.isArray(body)
+      ? body
+      : (body.reminders || (body.data && body.data.reminders) || []);
+    if (list.length > 0) {
+      reminders.value = list.map(r => ({
+        id: r.id,
+        type: r.type,
+        title: r.title,
+        subtitle: r.subtitle,
+        bgColor: r.bg_color,
+        iconBg: r.icon_bg
+      }));
+      return;
+    }
+
+    // 回退方案：旧逻辑（直接调用后端）保持不变
     const contextRes = await Promise.race([
       agentAPI.getReminderContext(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
     ]);
-    
     if (!contextRes.success) {
       console.error('Failed to get reminder context');
-      // 失败时保持之前的数据，不做任何更改
       return;
     }
-    
-    // 2. 调用生成提醒接口（这里需要外部Agent处理）
     const remindersRes = await Promise.race([
       agentAPI.generateReminders(),
       new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), TIMEOUT_MS))
     ]);
-    
     if (remindersRes.success && remindersRes.data && remindersRes.data.length > 0) {
-      // 只有成功且有数据时才更新提醒
       reminders.value = remindersRes.data.map(r => ({
         id: r.id,
         type: r.type,
@@ -638,7 +691,6 @@ const handleRefreshReminders = async () => {
         iconBg: r.icon_bg
       }));
     }
-    // 如果返回空数组或失败，保持之前的数据不变
   } catch (err) {
     // 超时或其他错误，保持之前的数据不变
     console.error('Failed to refresh reminders:', err);

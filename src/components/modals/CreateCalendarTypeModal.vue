@@ -108,30 +108,27 @@ const handleAISubmit = async () => {
   
   isLoading.value = true;
   try {
-    // 调用Agent解析日历类型
-    const res = await agentAPI.parseCalendarType({ user_input: aiInput.value.trim() });
-    if (res.success && res.data.parsed) {
-      const parsed = res.data.parsed;
-      
-      // 填入名称
-      if (parsed.name) {
-        typeName.value = parsed.name;
-      }
-      
-      // 匹配颜色（只接受6种固定颜色）
+    // 优先调用本地 agent_service（两阶段逻辑已封装）
+    const AGENT_SERVICE_BASE = import.meta.env.VITE_AGENT_SERVICE_BASE || 'http://localhost:8001';
+    const resp = await fetch(`${AGENT_SERVICE_BASE}/parse-calendar-type`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_input: aiInput.value.trim() })
+    });
+    if (!resp.ok) throw new Error(`agent_service ${resp.status}`);
+    const res = await resp.json();
+
+    // agent_service 会直接返回后端 /agent/parse-calendar-type 的 data
+    const parsed = res.parsed || (res.data && res.data.parsed);
+    if (parsed) {
+      if (parsed.name) typeName.value = parsed.name;
       if (parsed.color) {
         const matchedColor = colorOptions.find(c => c.value.toLowerCase() === parsed.color.toLowerCase());
-        if (matchedColor) {
-          selectedColor.value = matchedColor;
-        }
-        // 如果颜色不在列表中，保持当前选中的颜色，不接受自定义颜色
+        if (matchedColor) selectedColor.value = matchedColor;
       }
-      
       // 清空AI输入并重置高度
       aiInput.value = '';
-      if (aiTextarea.value) {
-        aiTextarea.value.style.height = 'auto';
-      }
+      if (aiTextarea.value) aiTextarea.value.style.height = 'auto';
     }
   } catch (err) {
     console.error('AI parse failed:', err);

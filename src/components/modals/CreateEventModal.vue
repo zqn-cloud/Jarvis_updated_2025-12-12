@@ -332,43 +332,30 @@ const handleAISubmit = async () => {
   
   isLoading.value = true;
   try {
-    // 调用Agent解析事件
-    const res = await agentAPI.parseEvent({ user_input: aiInput.value.trim() });
-    if (res.success && res.data.parsed) {
-      const parsed = res.data.parsed;
-      
-      // 填充表单数据
-      if (parsed.title) {
-        form.title = parsed.title;
-      }
-      if (parsed.date) {
-        form.date = parsed.date;
-      }
-      if (parsed.is_all_day !== undefined) {
-        form.isAllDay = parsed.is_all_day;
-      }
-      if (parsed.start_time) {
-        form.startTime = parsed.start_time;
-      }
-      if (parsed.end_time) {
-        form.endTime = parsed.end_time;
-      }
-      if (parsed.location) {
-        form.location = parsed.location;
-      }
+    // 优先调用本地 agent_service（两阶段解析已封装，返回 parsed）
+    const AGENT_SERVICE_BASE = import.meta.env.VITE_AGENT_SERVICE_BASE || 'http://localhost:8001';
+    const resp = await fetch(`${AGENT_SERVICE_BASE}/parse-event`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_input: aiInput.value.trim() })
+    });
+    if (!resp.ok) throw new Error(`agent_service ${resp.status}`);
+    const res = await resp.json();
+    const parsed = res.parsed || (res.data && res.data.parsed);
+
+    if (parsed) {
+      if (parsed.title) form.title = parsed.title;
+      if (parsed.date) form.date = parsed.date;
+      if (parsed.is_all_day !== undefined) form.isAllDay = parsed.is_all_day;
+      if (parsed.start_time) form.startTime = parsed.start_time;
+      if (parsed.end_time) form.endTime = parsed.end_time;
+      if (parsed.location) form.location = parsed.location;
       if (parsed.type_id) {
-        // 验证类型是否存在
         const typeExists = props.calendarTypes.some(t => t.id === parsed.type_id);
-        if (typeExists) {
-          form.typeId = parsed.type_id;
-        }
+        if (typeExists) form.typeId = parsed.type_id;
       }
-      
-      // 清空AI输入并重置高度
       aiInput.value = '';
-      if (aiTextarea.value) {
-        aiTextarea.value.style.height = 'auto';
-      }
+      if (aiTextarea.value) aiTextarea.value.style.height = 'auto';
     }
   } catch (err) {
     console.error('AI parse failed:', err);
