@@ -1,12 +1,20 @@
+import logging
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.utils import timezone
 from django.db import transaction
-from datetime import timedelta, date
+from datetime import timedelta, date, timezone as dt_timezone
 import uuid
 import os
+
+# 北京时间时区 (UTC+8)
+BEIJING_TZ = dt_timezone(timedelta(hours=8))
+
+def beijing_today():
+    """获取当前北京时间的日期"""
+    return timezone.now().astimezone(BEIJING_TZ).date()
 
 from .models import User, UserLocation, AccessToken, CalendarType, Event, EventLink, UploadedFile
 from .serializers import (
@@ -17,6 +25,9 @@ from .serializers import (
     UploadedFileSerializer
 )
 from .authentication import TokenAuthentication
+
+# 模块级日志器
+logger = logging.getLogger(__name__)
 
 
 def make_response(data=None, message=None, success=True, status_code=200):
@@ -974,7 +985,7 @@ def agent_reminder_context(request):
         }
     
     # 获取未来10天的事件（不含附件和链接）
-    today = date.today()
+    today = beijing_today()  # 使用北京时间
     end_date = today + timedelta(days=10)
     
     events = Event.objects.filter(
@@ -1066,7 +1077,7 @@ def agent_parse_task(request):
             'user_input': data['user_input'],
             'available_types': available_types,
             'default_type_id': 'general',
-            'date': date.today().isoformat(),  # 日期锁定为今天
+            'date': beijing_today().isoformat(),  # 日期锁定为今天（北京时间）
             'message': 'Agent请从available_types中选择type_id，返回title, type_id, is_all_day, start_time, end_time, location'
         })
     
@@ -1081,16 +1092,35 @@ def agent_parse_task(request):
     if not calendar_type:
         calendar_type = CalendarType.objects.filter(user=user, type_id='general').first()
     
+    # 使用序列化器统一校验/解析时间，避免自定义解析遗漏
+    create_payload = {
+        'title': title,
+        'date': beijing_today(),  # 使用北京时间
+        'is_all_day': data.get('is_all_day', True),
+        'start_time': data.get('start_time'),
+        'end_time': data.get('end_time'),
+        'location': data.get('location', ''),
+        'type_id': type_id,
+        'links': data.get('links', []),
+        'attachment_id': data.get('attachment_id')
+    }
+    serializer = EventCreateSerializer(data=create_payload)
+    if not serializer.is_valid():
+        logger.warning("[agent_parse_task] invalid payload errors=%s payload=%s", serializer.errors, create_payload)
+        return make_error_response('VALIDATION_ERROR', serializer.errors)
+    validated = serializer.validated_data
+    logger.info("[agent_parse_task] validated=%s", validated)
+
     # 创建事件（日期锁定为今天）
     event = Event.objects.create(
         user=user,
         calendar_type=calendar_type,
-        title=title,
-        date=date.today(),  # 锁定为今天
-        is_all_day=data.get('is_all_day', True),
-        start_time=data.get('start_time'),
-        end_time=data.get('end_time'),
-        location=data.get('location', '')
+        title=validated['title'],
+        date=validated['date'],  # 锁定为今天
+        is_all_day=validated['is_all_day'],
+        start_time=validated.get('start_time'),
+        end_time=validated.get('end_time'),
+        location=validated.get('location', '')
     )
     
     # 返回创建的事件数据（和EventSerializer字段对齐）
@@ -1244,7 +1274,7 @@ def agent_parse_event(request):
             'user_input': data['user_input'],
             'available_types': available_types,
             'default_type_id': 'general',
-            'current_date': date.today().isoformat(),
+            'current_date': beijing_today().isoformat(),  # 使用北京时间
             'message': 'Agent请从available_types中选择type_id，返回title, date, is_all_day, start_time, end_time, location, type_id'
         })
     
@@ -1261,7 +1291,7 @@ def agent_parse_event(request):
     return make_response({
         'parsed': {
             'title': title,
-            'date': data.get('date', date.today().isoformat()),
+            'date': data.get('date', beijing_today().isoformat()),  # 使用北京时间
             'is_all_day': data.get('is_all_day', True),
             'start_time': data.get('start_time'),
             'end_time': data.get('end_time'),
