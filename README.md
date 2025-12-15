@@ -96,8 +96,8 @@ python manage.py runserver
 # 设置环境变量（Windows PowerShell）
 $env:JARVIS_API_BASE="http://localhost:8000/api/v1"
 $env:JARVIS_TOKEN="<从后端登录获取的token>"
-$env:OPENAI_API_BASE="https://xiaoai.plus/v1"
-$env:OPENAI_API_KEY="<你的OpenAI API Key>"
+$env:OPENAI_API_BASE="<你的API base>"
+$env:OPENAI_API_KEY="<你的API Key>"
 $env:OPENWEATHER_API_KEY="<你的OpenWeather API Key>"  # 可选
 
 # 启动 Agent Service
