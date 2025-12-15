@@ -111,9 +111,9 @@ uvicorn backend.agent_service.main:app --host 0.0.0.0 --port 8001
 **获取 Bearer Token**：
 ```powershell
 # 先登录获取 token
-curl -X POST http://localhost:8000/api/v1/auth/login `
-  -H "Content-Type: application/json" `
-  -d '{\"account_id\": \"jarvis@cuhk.com\"}'
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"account_id": "jarvis@cuhk.com"}'
 # 从响应的 data.access_token 中复制 token
 ```
 
